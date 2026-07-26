@@ -1616,7 +1616,6 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 [[package]]
 name = "rainier-auth"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "argon2",
  "async-trait",
@@ -1636,7 +1635,6 @@ dependencies = [
 [[package]]
 name = "rainier-cache"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1650,7 +1648,6 @@ dependencies = [
 [[package]]
 name = "rainier-config"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "rainier-support",
  "serde",
@@ -1660,7 +1657,6 @@ dependencies = [
 [[package]]
 name = "rainier-console"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "rainier-container",
@@ -1671,7 +1667,6 @@ dependencies = [
 [[package]]
 name = "rainier-container"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "rainier-support",
@@ -1681,7 +1676,6 @@ dependencies = [
 [[package]]
 name = "rainier-crypt"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "aes-gcm",
  "aes-gcm-siv",
@@ -1702,7 +1696,6 @@ dependencies = [
 [[package]]
 name = "rainier-database"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1719,7 +1712,6 @@ dependencies = [
 [[package]]
 name = "rainier-drivers"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "anyhow",
  "base64",
@@ -1738,7 +1730,6 @@ dependencies = [
 [[package]]
 name = "rainier-events"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "rainier-support",
  "tracing",
@@ -1747,7 +1738,6 @@ dependencies = [
 [[package]]
 name = "rainier-filesystem"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1761,7 +1751,6 @@ dependencies = [
 [[package]]
 name = "rainier-framework"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "rainier-auth",
@@ -1795,7 +1784,6 @@ dependencies = [
 [[package]]
 name = "rainier-http"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "bytes",
  "chrono",
@@ -1813,7 +1801,6 @@ dependencies = [
 [[package]]
 name = "rainier-mail"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "base64",
@@ -1830,7 +1817,6 @@ dependencies = [
 [[package]]
 name = "rainier-middleware"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "rainier-http",
@@ -1842,7 +1828,6 @@ dependencies = [
 [[package]]
 name = "rainier-orm"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "anyhow",
  "base64",
@@ -1856,7 +1841,6 @@ dependencies = [
 [[package]]
 name = "rainier-orm-macros"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1866,7 +1850,6 @@ dependencies = [
 [[package]]
 name = "rainier-queue"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1884,7 +1867,6 @@ dependencies = [
 [[package]]
 name = "rainier-routing"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "percent-encoding",
@@ -1898,7 +1880,6 @@ dependencies = [
 [[package]]
 name = "rainier-server"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1918,7 +1899,6 @@ dependencies = [
 [[package]]
 name = "rainier-session"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1938,7 +1918,6 @@ dependencies = [
 [[package]]
 name = "rainier-support"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "anyhow",
  "serde",
@@ -1948,7 +1927,6 @@ dependencies = [
 [[package]]
 name = "rainier-validation"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1961,7 +1939,6 @@ dependencies = [
 [[package]]
 name = "rainier-view"
 version = "0.1.0"
-source = "git+https://github.com/safewords/rainier-framework.git#95ca07195a2375217c1c2f547ea184ea9072e212"
 dependencies = [
  "rainier-support",
  "serde",

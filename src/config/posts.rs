@@ -3,15 +3,17 @@
 use rainier_framework::config::{Config, Env};
 use rainier_framework::prelude::*;
 
+use crate::config::keys::{POSTS_MAX_PER_PAGE, POSTS_PER_PAGE};
+
 /// How posts are listed.
 pub fn configure(config: &Config, env: &Env) -> Result<()> {
     // Tunable per environment: a bigger page is reasonable on a fast database.
-    config.set("posts.per_page", env.int("POSTS_PER_PAGE", 15))?;
+    config.set(POSTS_PER_PAGE, env.int("POSTS_PER_PAGE", 15) as u64)?;
 
     // A literal, because it is a property of the API contract rather than of a
     // deployment — and because without an upper bound a client asking for
     // `per_page=1000000` is a denial of service against your own database.
-    config.set("posts.max_per_page", 100)?;
+    config.set(POSTS_MAX_PER_PAGE, 100)?;
 
     Ok(())
 }
@@ -25,8 +27,8 @@ mod tests {
         let config = Config::new();
         configure(&config, &Env::parse("POSTS_PER_PAGE=50")).unwrap();
 
-        assert_eq!(config.int("posts.per_page"), Some(50));
-        assert_eq!(config.int("posts.max_per_page"), Some(100));
+        assert_eq!(config.get(POSTS_PER_PAGE), Some(50));
+        assert_eq!(config.get(POSTS_MAX_PER_PAGE), Some(100));
     }
 
     #[test]
@@ -35,7 +37,7 @@ mod tests {
         configure(&config, &Env::parse("POSTS_MAX_PER_PAGE=1000000")).unwrap();
 
         assert_eq!(
-            config.int("posts.max_per_page"),
+            config.get(POSTS_MAX_PER_PAGE),
             Some(100),
             "the bound is the contract, not a deployment setting"
         );

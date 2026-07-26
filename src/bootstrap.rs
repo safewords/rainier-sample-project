@@ -56,7 +56,7 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
                 tracing::error!(error = %e, "configuration failed");
             }
         })
-        .with_sessions(sessions(&env, &database))
+        .with_sessions(sessions(&env, &database)?)
         .with_views(Arc::new(
             // Templates are re-read on every render outside production, so an
             // edit shows up without a restart.
@@ -84,106 +84,150 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
 /// A function rather than a line in the builder because the driver is a
 /// branch, and a branch in the middle of a builder chain is where a wiring
 /// mistake hides.
-fn sessions(env: &Env, database: &Database) -> SessionManager {
+fn sessions(env: &Env, database: &Database) -> Result<SessionManager> {
     let lifetime = chrono::Duration::seconds(env.int("SESSION_LIFETIME", 7200));
 
-    let store: Arc<dyn SessionStore> = match env.string("SESSION_DRIVER", "memory").as_str() {
-        "database" => Arc::new(DatabaseSessionStore::new(database.clone()).with_lifetime(lifetime)),
+    // An exhaustive `match` on a closed set, not a string compare with a
+    // fallback arm. Two things follow. A misspelled `SESSION_DRIVER` fails here
+    // with the list of valid values, instead of quietly logging everyone out on
+    // every deploy. And adding a store to the framework makes *this* a compile
+    // error — which is the correct list of places that need to learn about it.
+    let store: Arc<dyn SessionStore> = match env.setting::<SessionDriver>("SESSION_DRIVER")? {
+        SessionDriver::Memory => Arc::new(MemorySessionStore::new(lifetime)),
 
-        // The whole session, encrypted, in the cookie. No server state at all —
-        // and therefore no way to revoke a session. See the docs before
-        // choosing it.
-        "cookie" => Arc::new(CookieSessionStore::new(Encryption::from_keys(
-            KeyRing::from_base64(&env.string("APP_KEY", ""), &[])
-                .unwrap_or_else(|_| KeyRing::new(Key::generate())),
-        ))),
+        SessionDriver::Database => {
+            Arc::new(DatabaseSessionStore::new(database.clone()).with_lifetime(lifetime))
+        }
 
         // Sessions in whatever the cache is pointed at — Redis, a Redis
         // Cluster, or Memcached, all behind one port. The cache expires them
         // itself, so nothing has to sweep.
-        "cache" => Arc::new(CacheSessionStore::new(cache(env)).with_lifetime(lifetime)),
-
-        // Anything unrecognised falls back to memory rather than failing the
-        // boot: a typo in a driver name should not take the application down,
-        // and the log line says what happened.
-        other => {
-            if other != "memory" {
-                tracing::warn!(driver = %other, "unknown SESSION_DRIVER; using memory");
-            }
-            Arc::new(MemorySessionStore::new(lifetime))
+        SessionDriver::Cache => {
+            Arc::new(CacheSessionStore::new(cache(env)?).with_lifetime(lifetime))
         }
+
+        // The whole session, encrypted, in the cookie. No server state at all —
+        // and therefore no way to revoke a session. See the docs before
+        // choosing it.
+        SessionDriver::Cookie => Arc::new(CookieSessionStore::new(Encryption::from_keys(
+            KeyRing::from_base64(&env.string("APP_KEY", ""), &[])
+                .unwrap_or_else(|_| KeyRing::new(Key::generate())),
+        ))),
     };
 
-    SessionManager::with_config(
+    Ok(SessionManager::with_config(
         store,
         SessionConfig::default()
             .cookie(env.string("SESSION_COOKIE", "rainier_session"))
             .secure(env.bool("SESSION_SECURE", false))
             .same_site(SameSite::Lax)
             .lifetime(lifetime),
-    )
+    ))
 }
 
 /// Build the cache from `config/cache.rs`.
 ///
-/// The Redis and Memcached drivers are behind cargo features, so a build that
-/// does not enable one cannot select it — which is a compile-time answer to
-/// "why is my cache in memory", rather than a runtime surprise.
-fn cache(env: &Env) -> Arc<dyn Cache> {
-    let driver = env.string("CACHE_DRIVER", "memory");
+/// Three failure modes, and they get three different answers:
+///
+/// | | |
+/// |---|---|
+/// | `CACHE_DRIVER=redys` | **error** — a value outside the set, caught by `setting` |
+/// | `CACHE_DRIVER=redis`, no `redis-driver` feature | **error** — naming the feature to enable |
+/// | `CACHE_DRIVER=redis`, Redis unreachable | warn, fall back to memory |
+///
+/// Only the last is a runtime condition the application can be expected to
+/// survive. The first two are mistakes in the deployment, and a cache that
+/// silently is not the one you asked for is worse than a boot that stops.
+fn cache(env: &Env) -> Result<Arc<dyn Cache>> {
+    let driver = env.setting::<CacheDriver>("CACHE_DRIVER")?;
 
-    #[cfg(feature = "redis")]
-    if driver == "redis" || driver == "redis-cluster" {
-        use rainier_framework::drivers::RedisConnector;
+    match driver {
+        CacheDriver::Memory => Ok(Arc::new(MemoryCache::new())),
 
-        let url = env.string("REDIS_URL", "redis://127.0.0.1:6379/");
-        let connector = if driver == "redis-cluster" {
-            #[cfg(feature = "redis-cluster")]
+        CacheDriver::Redis | CacheDriver::RedisCluster => {
+            #[cfg(feature = "redis")]
             {
-                let seeds: Vec<String> = url.split(',').map(str::trim).map(String::from).collect();
-                RedisConnector::open_cluster(seeds)
-            }
-            #[cfg(not(feature = "redis-cluster"))]
-            {
-                tracing::error!("CACHE_DRIVER=redis-cluster needs the `redis-cluster` feature");
-                RedisConnector::open(&url)
-            }
-        } else {
-            RedisConnector::open(&url)
-        };
+                use rainier_framework::drivers::RedisConnector;
 
-        // Connecting is async and this is not, so the connection is opened
-        // lazily on a blocking handle. A cache that is briefly unreachable must
-        // not stop the application booting, so a failure here falls back to
-        // memory with a loud line rather than aborting.
-        match connector.and_then(|connector| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(rainier_framework::cache::RedisCache::connect(connector))
-            })
-        }) {
-            Ok(redis) => return Arc::new(redis),
-            Err(e) => tracing::error!(error = %e.message(), "could not reach Redis; using memory"),
+                let url = env.string("REDIS_URL", "redis://127.0.0.1:6379/");
+                let connector = if driver == CacheDriver::RedisCluster {
+                    #[cfg(feature = "redis-cluster")]
+                    {
+                        let seeds: Vec<String> =
+                            url.split(',').map(str::trim).map(String::from).collect();
+                        RedisConnector::open_cluster(seeds)
+                    }
+                    #[cfg(not(feature = "redis-cluster"))]
+                    {
+                        return Err(missing_feature(driver));
+                    }
+                } else {
+                    RedisConnector::open(&url)
+                };
+
+                // Connecting is async and this is not, so the connection is
+                // opened on a blocking handle. A cache that is briefly
+                // unreachable must not stop the application booting, so *this*
+                // failure — unlike the two above — falls back with a loud line.
+                match connector.and_then(|connector| {
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current()
+                            .block_on(rainier_framework::cache::RedisCache::connect(&connector))
+                    })
+                }) {
+                    Ok(redis) => Ok(Arc::new(redis)),
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e.message(),
+                            "could not reach Redis; using memory"
+                        );
+                        Ok(Arc::new(MemoryCache::new()))
+                    }
+                }
+            }
+            #[cfg(not(feature = "redis"))]
+            {
+                Err(missing_feature(driver))
+            }
         }
-    }
 
-    #[cfg(feature = "memcached")]
-    if driver == "memcached" {
-        use rainier_framework::cache::MemcachedCache;
-        use rainier_framework::drivers::MemcachedConnector;
+        CacheDriver::Memcached => {
+            #[cfg(feature = "memcached")]
+            {
+                use rainier_framework::cache::MemcachedCache;
+                use rainier_framework::drivers::MemcachedConnector;
 
-        let url = env.string("MEMCACHED_URL", "127.0.0.1:11211");
-        return Arc::new(MemcachedCache::new(MemcachedConnector::open(url)));
-    }
+                let url = env.string("MEMCACHED_URL", "127.0.0.1:11211");
+                Ok(Arc::new(MemcachedCache::new(MemcachedConnector::open(url))))
+            }
+            #[cfg(not(feature = "memcached"))]
+            {
+                Err(missing_feature(driver))
+            }
+        }
 
-    if driver != "memory" {
-        tracing::warn!(
-            driver = %driver,
-            "CACHE_DRIVER is not available in this build; using memory. Enable the matching \
-             cargo feature."
-        );
+        // This application does not build the DynamoDB store. Saying so beats
+        // a `_ =>` arm, which would swallow a driver added to the framework
+        // later.
+        CacheDriver::DynamoDb => Err(Error::internal(
+            "CACHE_DRIVER=dynamodb is not wired up in this application; see `bootstrap::cache`",
+        )),
     }
-    Arc::new(MemoryCache::new())
+}
+
+/// The driver exists but this build cannot construct it.
+///
+/// A different message from "unknown driver" on purpose: the fix is a cargo
+/// feature, not a spelling correction, and the message says which one.
+#[allow(dead_code, reason = "used only by the arms whose feature is off")]
+fn missing_feature(driver: CacheDriver) -> Error {
+    match driver.feature() {
+        Some(feature) => Error::internal(format!(
+            "CACHE_DRIVER={driver} needs the `{feature}` cargo feature, which this build does \
+             not have"
+        )),
+        None => Error::internal(format!("CACHE_DRIVER={driver} is not available in this build")),
+    }
 }
 
 /// Open the database.
