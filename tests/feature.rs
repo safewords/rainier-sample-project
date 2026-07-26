@@ -13,7 +13,8 @@
 #![allow(clippy::await_holding_lock)]
 
 use app::app::models::Post;
-use app::app::providers::{register_user, PostRepository};
+use app::app::providers::register_user;
+use app::app::repositories::PostRepository;
 use app::{boot, Mode};
 use rainier_framework::database::Repository;
 use rainier_framework::http::{Method, Request, Response, StatusCode};

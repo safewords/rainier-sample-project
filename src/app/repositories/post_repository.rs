@@ -1,12 +1,4 @@
-//! Repositories — where the domain's queries get names.
-//!
-//! `EntityRepository<M>` already implements every CRUD operation for any
-//! model, so these newtypes exist for one reason: to give *this application's*
-//! queries a name. `published_page` lives here rather than being a `Criteria`
-//! each controller assembles, so "what published means" is defined once.
-//!
-//! `Deref` exposes everything the generic repository already does, so a
-//! newtype costs nothing.
+//! `PostRepository` — the queries this application asks about posts.
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -14,7 +6,7 @@ use std::sync::Arc;
 use rainier_framework::events::Dispatcher;
 use rainier_framework::prelude::*;
 
-use crate::app::models::{Post, User};
+use crate::app::models::Post;
 
 /// Access to posts.
 pub struct PostRepository {
@@ -79,31 +71,6 @@ impl PostRepository {
 
 impl Deref for PostRepository {
     type Target = EntityRepository<Post>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-/// Access to users.
-pub struct UserRepository {
-    inner: EntityRepository<User>,
-}
-
-impl UserRepository {
-    /// A repository over `db`.
-    pub fn new(db: Database) -> Self {
-        Self { inner: EntityRepository::<User>::new(db) }
-    }
-
-    /// The user with this address.
-    pub async fn by_email(&self, email: &str) -> Result<Option<User>> {
-        self.inner.first_by("email", email.into()).await
-    }
-}
-
-impl Deref for UserRepository {
-    type Target = EntityRepository<User>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner

@@ -5,7 +5,7 @@ use rainier_framework::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::app::mail::PostLiveMail;
-use crate::app::providers::{PostRepository, UserRepository};
+use crate::app::repositories::{PostRepository, UserRepository};
 
 /// Tells an author their post is live.
 ///

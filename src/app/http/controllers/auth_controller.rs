@@ -5,7 +5,7 @@ use rainier_framework::prelude::*;
 
 use crate::app::http::controllers::post_controller::{current_user, resolve};
 use crate::app::http::requests::LoginRequest;
-use crate::app::providers::UserRepository;
+use crate::app::repositories::UserRepository;
 
 /// `POST /login` — exchange credentials for an API token.
 pub async fn login(Validated(input): Validated<LoginRequest>) -> Result<Response> {

@@ -7,3 +7,4 @@ pub mod mail;
 pub mod models;
 pub mod policies;
 pub mod providers;
+pub mod repositories;

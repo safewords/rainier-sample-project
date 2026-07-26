@@ -4,7 +4,7 @@ use rainier_framework::console_kernel::{exit, Arguments, Command};
 use rainier_framework::database::Repository;
 use rainier_framework::prelude::*;
 
-use crate::app::providers::PostRepository;
+use crate::app::repositories::PostRepository;
 use crate::database::seeders;
 
 /// Populates the database with demo data.

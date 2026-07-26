@@ -11,7 +11,7 @@ use crate::app::http::requests::{ListPostsRequest, StorePostRequest};
 use crate::app::jobs::NotifyAuthor;
 use crate::app::models::{Post, PostPublished, User};
 use crate::app::policies::PostPolicy;
-use crate::app::providers::PostRepository;
+use crate::app::repositories::PostRepository;
 
 /// `GET /api/posts` — a page of published posts.
 pub async fn index(Validated(query): Validated<ListPostsRequest>) -> Result<Response> {

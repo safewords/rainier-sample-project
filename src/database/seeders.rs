@@ -6,7 +6,8 @@ use rainier_framework::database::Repository;
 use rainier_framework::prelude::*;
 
 use crate::app::models::Post;
-use crate::app::providers::{register_user, PostRepository, UserRepository};
+use crate::app::providers::register_user;
+use crate::app::repositories::{PostRepository, UserRepository};
 
 /// Seed a demo user and a few posts.
 ///

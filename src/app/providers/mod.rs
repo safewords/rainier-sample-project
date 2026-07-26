@@ -4,10 +4,10 @@
 //! `src/bootstrap.rs`, in order.
 
 pub mod app_provider;
-pub mod repositories;
+pub mod repository_provider;
 
 pub use app_provider::{AppServiceProvider, EventServiceProvider};
-pub use repositories::{PostRepository, UserRepository};
+pub use repository_provider::RepositoryServiceProvider;
 
 /// Create a user with a hashed password, and welcome them.
 ///
@@ -23,7 +23,7 @@ pub async fn register_user(
     use rainier_framework::auth::{Argon2Hasher, Hasher};
     use rainier_framework::database::Repository;
 
-    let users = app.resolve::<UserRepository>()?;
+    let users = app.resolve::<crate::app::repositories::UserRepository>()?;
     let hasher = app.resolve::<Argon2Hasher>()?;
 
     let user = users

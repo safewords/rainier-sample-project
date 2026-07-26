@@ -19,7 +19,9 @@ use rainier_framework::session::{
 use rainier_framework::view::BladeEngine;
 
 use crate::app::http::kernel;
-use crate::app::providers::{AppServiceProvider, EventServiceProvider};
+use crate::app::providers::{
+    AppServiceProvider, EventServiceProvider, RepositoryServiceProvider,
+};
 use crate::config;
 use crate::routes;
 
@@ -66,6 +68,10 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
             },
         ))
         .with_database(database.clone())
+        // Registration order is declaration order. It does not matter here —
+        // `register` binds factories and resolves nothing — but keeping the
+        // repositories first reads as the dependency direction.
+        .with_provider(RepositoryServiceProvider { database: database.clone() })
         .with_provider(AppServiceProvider { mode, database })
         .with_middleware(kernel::register)
         .with_events(EventServiceProvider::register_listeners)

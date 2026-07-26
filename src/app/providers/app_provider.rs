@@ -20,7 +20,6 @@ use rainier_framework::queue::{JobRegistry, MemoryQueue, Queue as QueueDriver, Q
 
 use crate::app::jobs::NotifyAuthor;
 use crate::app::models::{PostPublished, User};
-use crate::app::providers::{PostRepository, UserRepository};
 use crate::bootstrap::Mode;
 use crate::database::migrations;
 
@@ -39,7 +38,6 @@ impl ServiceProvider for AppServiceProvider {
 
     fn register(&self, app: &Application) -> Result<()> {
         self.hashing(app);
-        self.repositories(app);
         self.authentication(app);
         self.mail(app)?;
         self.queue(app);
@@ -93,16 +91,6 @@ impl AppServiceProvider {
             Mode::Testing => Argon2Hasher::insecure_for_tests(),
             _ => Argon2Hasher::new(),
         });
-    }
-
-    fn repositories(&self, app: &Application) {
-        let db = self.database.clone();
-        app.singleton(move |container: &Container| {
-            Ok(PostRepository::new(db.clone(), container.resolve::<Dispatcher>()?))
-        });
-
-        let db = self.database.clone();
-        app.singleton(move |_: &Container| Ok(UserRepository::new(db.clone())));
     }
 
     fn authentication(&self, app: &Application) {

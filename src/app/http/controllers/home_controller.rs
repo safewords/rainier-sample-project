@@ -4,7 +4,7 @@ use rainier_framework::prelude::*;
 use rainier_framework::view::View as ViewTemplate;
 
 use crate::app::http::controllers::post_controller::resolve;
-use crate::app::providers::PostRepository;
+use crate::app::repositories::PostRepository;
 
 /// `GET /` — the front page.
 pub async fn index() -> Result<Response> {
