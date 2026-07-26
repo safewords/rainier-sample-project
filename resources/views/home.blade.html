@@ -1,0 +1,16 @@
+@extends('layouts.app')
+
+@section('title'){{ title }}@endsection
+
+@section('content')
+    @if(posts)
+        @foreach(posts as post)
+            <article>
+                <h2>{{ post.title }}</h2>
+                <p>{{ post.body }}</p>
+            </article>
+        @endforeach
+    @else
+        <p>Nothing published yet. Run <code>cargo run -- app:seed</code>.</p>
+    @endif
+@endsection

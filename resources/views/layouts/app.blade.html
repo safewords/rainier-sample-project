@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@yield('title')</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 44rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.6; }
+        article { border-bottom: 1px solid #ddd; padding-bottom: 1rem; margin-bottom: 1rem; }
+        a { color: #0b5; }
+    </style>
+</head>
+<body>
+    <header><h1>@yield('title')</h1></header>
+    <main>@yield('content')</main>
+    <footer><p><small>Built with Rainier.</small></p></footer>
+</body>
+</html>

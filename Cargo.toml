@@ -1,0 +1,41 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+description = "A Rainier application."
+
+[dependencies]
+# The framework. `sea-orm-executor` gives the native MySQL / Postgres / SQLite
+# driver; drop it and add `d1-http` to target a Cloudflare Worker instead.
+rainier-framework = { git = "https://github.com/safewords/rainier-framework.git", features = [
+    "sea-orm-executor",
+] }
+
+# `#[derive(Entity)]` expands to `::polyormous::…`, an absolute path, so any
+# crate defining a model needs polyORMous as a direct dependency — the
+# framework's re-export is not enough to satisfy it.
+polyormous = { git = "https://github.com/safewords/polyormous-rs.git", features = [
+    "sea-orm-executor",
+] }
+
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+# One `app` library plus one `app` binary: the binary is the console entry
+# point (Laravel's `artisan`), and the library is what the tests boot.
+[lib]
+name = "app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "app"
+path = "src/main.rs"

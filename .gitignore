@@ -1,0 +1,26 @@
+# Build artifacts
+/target
+**/*.rs.bk
+
+# Local configuration and secrets
+.env
+
+# Runtime output
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/mail/*
+!/storage/mail/.gitkeep
+*.sqlite
+*.sqlite-journal
+
+# Editors
+/.idea
+/.vscode
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local development overrides (see .cargo/config.toml)
+/.cargo
