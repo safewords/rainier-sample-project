@@ -1,92 +1,117 @@
 //! The HTTP kernel — `app/Http/Kernel.php`.
 //!
-//! Three things, exactly as in Laravel:
+//! Laravel's kernel is three maps: `$middleware` (global), `$routeMiddleware`
+//! (alias → class) and `$middlewareGroups` (name → list of aliases). Two of
+//! those exist only because PHP cannot put a class in a route file and have the
+//! router mean it.
 //!
-//! - **global** middleware, which runs on every request;
-//! - **aliases**, so a route can say `.middleware(["auth"])` instead of naming
-//!   a type — which is what lets the router stay independent of auth, sessions
-//!   and everything else a route might be guarded with;
-//! - **groups**, which bundle aliases under one name.
+//! Rust can, so this file has:
 //!
-//! An alias may take arguments after a colon: `"throttle:30"` reaches the
-//! factory as `["30"]`.
+//! - **global** middleware, registered on the [`MiddlewareRegistry`] — the one
+//!   list that is genuinely a registry, since it belongs to no route;
+//! - **groups**, which are plain functions returning a [`MiddlewareStack`].
+//!
+//! There are no aliases, because there is nothing to alias. A route attaches
+//! `ThrottleRequests::per_minute(10)`, not `"throttle:10"`.
+//!
+//! ## What that buys
+//!
+//! | | With names | With values |
+//! |---|---|---|
+//! | `middleware("athu")` | boots; the route is unguarded | does not compile |
+//! | Renaming a middleware | every route silently breaks | every route is a compile error naming it |
+//! | "What does `web` do?" | grep the kernel | go to definition |
+//! | A group taking a parameter | parse it back out of `"throttle:60,1"` | `api(60)` |
+//!
+//! The one thing an alias genuinely did — build middleware that needs the
+//! container — is `MiddlewareStack::resolved`, which runs when the router
+//! compiles. See [`auth`].
 
-use std::sync::Arc;
-
-use rainier_framework::auth::{AuthManager, Authenticate};
+use rainier_framework::auth::Authenticate;
+use rainier_framework::groups;
 use rainier_framework::middleware::{
-    AddHeaders, ConvertEmptyStringsToNull, HandleCors, MiddlewareRegistry, ThrottleRequests,
-    TrimStrings,
+    AddHeaders, ConvertEmptyStringsToNull, HandleCors, MiddlewareRegistry, MiddlewareStack,
+    ThrottleRequests, TrimStrings,
 };
 
 use crate::app::http::middleware::RequestIdMiddleware;
 use crate::app::models::User;
 
-/// Register this application's middleware.
+/// Register this application's **global** middleware.
 ///
-/// The framework has already registered its own defaults by the time this runs
-/// (`TrimStrings` and `ConvertEmptyStringsToNull` globally; `cors`,
-/// `secure-headers` and `throttle` aliases; `web` and `api` groups), so this
-/// adds what is yours and overrides what you want to differ.
+/// The framework has already registered its own (`TrimStrings` and
+/// `ConvertEmptyStringsToNull`), so this adds what is ours.
 pub fn register(registry: &MiddlewareRegistry) {
-    global(registry);
-    aliases(registry);
-    groups(registry);
-}
-
-/// Runs on every request, in this order, outside everything else.
-fn global(registry: &MiddlewareRegistry) {
     // Stamped first so every log line and every error response can carry it.
     registry.global(RequestIdMiddleware::new());
 
     // Re-stated rather than assumed: these two are the reason an unfilled text
     // input arrives as `null` instead of `""`, and a stray space in an email
-    // field does not create a second account.
-    registry.global(TrimStrings::new().except(["password", "password_confirmation", "body"]));
-    registry.global(ConvertEmptyStringsToNull);
+    // field does not create a second account. Restating them here costs a
+    // second pass over the input and makes the list complete in one place.
+    registry.global((
+        TrimStrings::new().except(["password", "password_confirmation", "body"]),
+        ConvertEmptyStringsToNull,
+    ));
 }
 
-/// Named middleware a route can refer to.
-fn aliases(registry: &MiddlewareRegistry) {
-    // `auth` and `auth:api` — needs the application's user type, which is
-    // exactly what the framework cannot know, so it is registered here.
-    registry.alias_factory("auth", |args: &[String]| {
-        let auth = rainier_framework::container::facade_application().resolve::<AuthManager<User>>()?;
-        Ok(Arc::new(Authenticate::from_args(auth, args)) as Arc<_>)
-    });
+// --- groups ----------------------------------------------------------------
+//
+// Laravel's `$middlewareGroups`, as functions. Note what a function can do that
+// a map entry cannot: take an argument, call another group, and be found by
+// "go to definition".
 
-    registry.alias("secure-headers", Arc::new(AddHeaders::security_defaults()));
+/// Pages a browser visits: security headers plus a session.
+///
+/// Extends the framework's `web` rather than restating it. Laravel's
+/// `$middlewareGroups['web'] = [...]` *replaces* the list, which is how a
+/// deploy quietly loses `StartSession` while adding one thing.
+pub fn web() -> MiddlewareStack {
+    groups::web()
+}
 
-    // A stricter limiter than the framework's default, for endpoints that
-    // create things.
-    registry.alias_factory("throttle-writes", |args: &[String]| {
-        let per_minute = args.first().and_then(|a| a.parse().ok()).unwrap_or(20);
-        Ok(Arc::new(ThrottleRequests::per_minute(per_minute)) as Arc<_>)
-    });
-
-    registry.alias(
-        "cors",
-        Arc::new(HandleCors::any_origin().allow_headers([
+/// The JSON API: CORS, a rate limit, and no session.
+///
+/// A session row and a `Set-Cookie` per call would be pure overhead for a
+/// client that authenticates with a token on every request.
+pub fn api() -> MiddlewareStack {
+    MiddlewareStack::new()
+        .with(HandleCors::any_origin().allow_headers([
             "content-type",
             "authorization",
             "x-requested-with",
-        ])),
-    );
+        ]))
+        .with(ThrottleRequests::per_minute(60))
 }
 
-/// Bundles of aliases.
+/// The API, authenticated with a bearer token.
 ///
-/// Registering a group **replaces** it rather than adding to it, so each of
-/// these has to list everything it wants — including the framework's own
-/// members. Dropping `session` from `web` by writing only `["secure-headers"]`
-/// is the mistake to watch for: nothing fails, and every route in the group
-/// quietly has no session.
-fn groups(registry: &MiddlewareRegistry) {
-    registry.group("web", ["secure-headers", "session"]);
+/// A group built from another group — the composition Laravel spells by
+/// listing `'api'` inside another array, except this one is checked.
+pub fn api_authenticated() -> MiddlewareStack {
+    api().with_stack(auth("api"))
+}
 
-    // No `session` here on purpose. An API authenticates per request with a
-    // token, so a session row and a cookie per call would be pure overhead.
-    registry.group("api", ["cors", "throttle:60"]);
+/// Require an authenticated user, through the named guard.
+///
+/// The one place this application needs `resolved`: the `AuthManager<User>` is
+/// bound by `AppServiceProvider`, and routes are declared before providers run.
+/// The closure runs when the router compiles, which is after.
+///
+/// Note the `User` in the type. `"auth"` could never say which user model it
+/// authenticates; this cannot avoid saying it.
+pub fn auth(guard: &str) -> MiddlewareStack {
+    Authenticate::<User>::resolved_with_guard(guard)
+}
+
+/// A stricter limiter for endpoints that create things.
+pub fn throttle_writes(per_minute: u32) -> MiddlewareStack {
+    MiddlewareStack::new().with(ThrottleRequests::per_minute(per_minute))
+}
+
+/// Security headers on their own, for a route outside `web`.
+pub fn secure_headers() -> MiddlewareStack {
+    MiddlewareStack::new().with(AddHeaders::security_defaults())
 }
 
 #[cfg(test)]
@@ -94,40 +119,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_alias_a_route_uses_is_registered() {
-        // This is the test that stops a typo in a route's `.middleware([..])`
-        // becoming a boot failure discovered by hand.
-        let registry = MiddlewareRegistry::new();
-        register(&registry);
-
-        for name in ["auth", "secure-headers", "throttle-writes", "cors"] {
-            assert!(registry.has_alias(name), "`{name}` should be registered");
-        }
-        for name in ["web", "api"] {
-            assert!(registry.has_group(name), "`{name}` group should be registered");
-        }
-    }
-
-    #[test]
     fn the_web_group_still_starts_sessions() {
-        // Registering a group replaces it, so it is easy to drop `session`
-        // while adding something else — and nothing would fail, which is
-        // exactly why this assertion exists.
-        let registry = MiddlewareRegistry::new();
-        registry.alias("session", Arc::new(AddHeaders::new()));
-        register(&registry);
-
+        // The mistake Laravel's replace-the-array model invites, and the
+        // reason `web()` delegates instead of restating: dropping the session
+        // fails nothing, and every page in the group quietly has none.
         assert!(
-            registry.resolve_one(&"web".into()).is_ok_and(|stack| stack.len() == 2),
-            "the `web` group should be security headers *and* the session"
+            web().labels().contains(&"StartSession"),
+            "the `web` group should be security headers *and* the session, got {:?}",
+            web().labels()
         );
     }
 
     #[test]
-    fn a_parameterised_alias_reads_its_arguments() {
+    fn the_api_group_has_no_session() {
+        assert!(!api().labels().contains(&"StartSession"));
+        assert_eq!(api().labels(), vec!["HandleCors", "ThrottleRequests"]);
+    }
+
+    #[test]
+    fn the_authenticated_api_is_the_api_plus_a_guard() {
+        assert_eq!(
+            api_authenticated().labels(),
+            vec!["HandleCors", "ThrottleRequests", "Authenticate"],
+            "composition, not a second list to keep in step"
+        );
+    }
+
+    #[test]
+    fn a_group_can_take_an_argument() {
+        // `"throttle:20"` parsed a number back out of a string. This is a
+        // number.
+        assert_eq!(throttle_writes(20).len(), 1);
+    }
+
+    #[test]
+    fn the_global_stack_is_stamped_with_a_request_id_first() {
+        // The order matters: everything after it can log the id.
         let registry = MiddlewareRegistry::new();
         register(&registry);
 
-        assert!(registry.resolve_one(&"throttle-writes:5".into()).is_ok());
+        // `RequestId` rather than `RequestIdMiddleware`: the middleware
+        // overrides `name()`, and the label is what `route:list` prints.
+        assert_eq!(
+            registry.global_labels(),
+            vec!["RequestId", "TrimStrings", "ConvertEmptyStringsToNull"]
+        );
     }
 }

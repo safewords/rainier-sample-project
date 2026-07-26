@@ -9,11 +9,12 @@
 use rainier_framework::prelude::*;
 
 use crate::app::http::controllers::{auth_controller, post_controller};
+use crate::app::http::kernel;
 
 /// Declare the API routes.
 pub fn routes(router: &mut Router) {
     router.group(
-        GroupAttributes::new().prefix("api").name("api.").middleware(["api"]),
+        GroupAttributes::new().prefix("api").name("api.").middleware(kernel::api()),
         |router| {
             // --- public ---------------------------------------------------
             router.get("/posts", post_controller::index).name("posts.index");
@@ -25,14 +26,16 @@ pub fn routes(router: &mut Router) {
                 .where_slug("post");
 
             // --- authenticated --------------------------------------------
-            router.group(GroupAttributes::new().middleware(["auth:api"]), |router| {
+            // The guard names the user model it authenticates, which is the
+            // thing `"auth:api"` could never say.
+            router.group(GroupAttributes::new().middleware(kernel::auth("api")), |router| {
                 router.get("/me", auth_controller::me).name("me");
                 router.post("/logout", auth_controller::logout).name("logout");
 
                 router
                     .post("/posts", post_controller::store)
                     .name("posts.store")
-                    .middleware(["throttle-writes:20"]);
+                    .middleware(kernel::throttle_writes(20));
 
                 router
                     .post("/posts/{post}/publish", post_controller::publish)
