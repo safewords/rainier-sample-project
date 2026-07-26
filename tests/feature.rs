@@ -395,6 +395,70 @@ async fn one_notification_reaches_every_channel_it_selected() {
 }
 
 #[tokio::test]
+async fn the_bell_menu_lists_what_the_database_channel_stored() {
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+    work_the_mail_queue(&app).await;
+
+    let body = app.json(app.authed(Method::GET, "/api/notifications", &token).build()).await;
+
+    assert_eq!(body["unread"], 1);
+    assert_eq!(body["data"][0]["type"], "post.live");
+    assert_eq!(body["data"][0]["data"]["title"], "Going live");
+    assert!(body["data"][0]["read_at"].is_null());
+}
+
+#[tokio::test]
+async fn reading_a_notification_clears_the_badge() {
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+    work_the_mail_queue(&app).await;
+
+    let listed = app.json(app.authed(Method::GET, "/api/notifications", &token).build()).await;
+    let id = listed["data"][0]["id"].as_str().unwrap().to_string();
+
+    let response = app
+        .send(app.authed(Method::POST, &format!("/api/notifications/{id}/read"), &token).build())
+        .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let after = app.json(app.authed(Method::GET, "/api/notifications", &token).build()).await;
+    assert_eq!(after["unread"], 0);
+    assert!(!after["data"][0]["read_at"].is_null(), "read, not deleted");
+}
+
+#[tokio::test]
+async fn you_cannot_read_someone_elses_notification() {
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+    work_the_mail_queue(&app).await;
+
+    // A guessable id belonging to nobody in this session.
+    let response = app
+        .send(app.authed(Method::POST, "/api/notifications/not-yours/read", &token).build())
+        .await;
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn the_bell_menu_is_empty_for_a_user_nothing_was_sent_to() {
+    let app = App::boot().await;
+    let token = app.login().await;
+
+    let body = app.json(app.authed(Method::GET, "/api/notifications", &token).build()).await;
+
+    assert_eq!(body["unread"], 0);
+    assert_eq!(body["data"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
 async fn a_stored_notification_can_be_marked_read() {
     // The bell menu's other half. `unread_count` is what the badge shows.
     let app = App::boot().await;

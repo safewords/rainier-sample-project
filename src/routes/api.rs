@@ -8,7 +8,7 @@
 
 use rainier_framework::prelude::*;
 
-use crate::app::http::controllers::{auth_controller, post_controller};
+use crate::app::http::controllers::{auth_controller, notification_controller, post_controller};
 use crate::app::http::kernel;
 
 /// Declare the API routes.
@@ -46,6 +46,17 @@ pub fn routes(router: &mut Router) {
                     .delete("/posts/{post}", post_controller::destroy)
                     .name("posts.destroy")
                     .where_slug("post");
+
+                // The in-app bell menu — what the database channel wrote.
+                router
+                    .get("/notifications", notification_controller::index)
+                    .name("notifications.index");
+                router
+                    .post("/notifications/read", notification_controller::read_all)
+                    .name("notifications.read-all");
+                router
+                    .post("/notifications/{notification}/read", notification_controller::read)
+                    .name("notifications.read");
             });
         },
     );

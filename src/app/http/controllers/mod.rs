@@ -4,4 +4,5 @@
 
 pub mod auth_controller;
 pub mod home_controller;
+pub mod notification_controller;
 pub mod post_controller;
