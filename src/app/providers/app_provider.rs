@@ -49,6 +49,19 @@ impl ServiceProvider for AppServiceProvider {
     }
 
     rainier_framework::container::boot_provider!(async |self, app| {
+        // Migrating on boot is what makes a fresh clone run with no setup step.
+        // It is a development convenience: in production you want one migration
+        // step per deploy, not a race between starting instances.
+        //
+        // Skipped for the migration commands themselves, and that skip is not
+        // cosmetic — without it `migrate:rollback` would re-apply everything
+        // during boot and then undo the batch it had just created, and
+        // `migrate` would always report "Nothing to migrate" because boot had
+        // already done it.
+        if running_a_migration_command() {
+            return Ok(());
+        }
+
         // Resolving is legal here and nowhere earlier.
         let database = app.resolve::<Database>()?;
         let migrator = app.resolve::<Migrator>()?;
@@ -59,6 +72,17 @@ impl ServiceProvider for AppServiceProvider {
         }
         Ok(())
     });
+}
+
+/// Is the command being run one that manages migrations itself?
+///
+/// Reading `argv` in a provider is not something to make a habit of — a
+/// provider that behaves differently depending on how the process was started
+/// is a provider you cannot reason about. It earns its place here because the
+/// thing it guards is *itself* the convenience, and the alternative is a
+/// command that lies about what it did.
+fn running_a_migration_command() -> bool {
+    std::env::args().nth(1).is_some_and(|command| command.starts_with("migrate"))
 }
 
 impl AppServiceProvider {

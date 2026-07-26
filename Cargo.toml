@@ -17,12 +17,10 @@ rainier-framework = { git = "https://github.com/safewords/rainier-framework.git"
 # needs. Add "redis", "redis-cluster" or "memcached" to the features above to
 # make CACHE_DRIVER / SESSION_DRIVER=cache able to select them.
 
-# `#[derive(Entity)]` expands to `::polyormous::…`, an absolute path, so any
-# crate defining a model needs polyORMous as a direct dependency — the
+# `#[derive(Entity)]` expands to `::rainier_orm::…`, an absolute path, so any
+# crate defining a model needs Rainier ORM as a direct dependency — the
 # framework's re-export is not enough to satisfy it.
-polyormous = { git = "https://github.com/safewords/polyormous-rs.git", features = [
-    "sea-orm-executor",
-] }
+rainier-orm = { git = "https://github.com/safewords/rainier-framework.git" }
 
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["clock", "serde"] }

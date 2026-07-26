@@ -6,15 +6,15 @@ use serde::Serialize;
 
 /// A post, owned by a user.
 #[derive(Entity, Clone, Debug, PartialEq, Serialize)]
-#[mdbo(table = "posts")]
-#[mdbo(index = "published, created_at")]
+#[orm(table = "posts")]
+#[orm(index = "published, created_at")]
 pub struct Post {
     /// The primary key.
-    #[mdbo(pk, auto_increment)]
+    #[orm(pk, auto_increment)]
     pub id: u64,
 
     /// The URL-safe identifier routes bind by.
-    #[mdbo(unique)]
+    #[orm(unique)]
     pub slug: String,
 
     /// The headline.
@@ -32,7 +32,7 @@ pub struct Post {
     /// explicit because the two sides may live in different backends, and a
     /// generated `JOIN` would break the moment they did. Traverse it with
     /// `repository.find_by("author_id", id)`.
-    #[mdbo(index, references = "users(id)", on_delete = "cascade")]
+    #[orm(index, references = "users(id)", on_delete = "cascade")]
     pub author_id: u64,
 
     /// When the row was created.

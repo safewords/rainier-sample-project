@@ -7,17 +7,17 @@ use serde::Serialize;
 
 /// Someone who can log in.
 #[derive(Entity, Clone, Debug, PartialEq, Serialize)]
-#[mdbo(table = "users")]
+#[orm(table = "users")]
 pub struct User {
     /// The primary key.
-    #[mdbo(pk, auto_increment)]
+    #[orm(pk, auto_increment)]
     pub id: u64,
 
     /// Their display name.
     pub name: String,
 
     /// Their address, and their login.
-    #[mdbo(unique)]
+    #[orm(unique)]
     pub email: String,
 
     /// The Argon2 hash of their password.
@@ -29,7 +29,7 @@ pub struct User {
 
     /// Their API token, once they log in.
     #[serde(skip)]
-    #[mdbo(index)]
+    #[orm(index)]
     pub api_token: Option<String>,
 
     /// When the row was created.

@@ -6,6 +6,11 @@
 //! Names are prefixed with a number because they run **in the order listed**
 //! and never re-run: renaming one makes it run again, so treat an applied name
 //! as permanent.
+//!
+//! Every step declares how to undo itself, which is what `migrate:rollback`
+//! runs. Where a step genuinely cannot be undone, say so with
+//! `raw_irreversible` and the reason — a rollback then refuses by name instead
+//! of quietly doing nothing.
 
 use rainier_framework::database::Migrator;
 
@@ -15,15 +20,18 @@ use crate::app::models::{Post, User};
 pub fn all() -> Migrator {
     Migrator::new()
         // `create_table` renders the DDL from the model's own metadata, so the
-        // schema cannot drift from the struct that defines it.
+        // schema cannot drift from the struct that defines it. Its `down` is
+        // the matching `DROP TABLE`, which you get without writing it.
         .create_table::<User>("0001_create_users")
         .create_table::<Post>("0002_create_posts")
-        // A step can also be SQL you write. `raw` runs the same statement on
-        // every backend; `step` takes a closure and renders per dialect, for
-        // the cases where they genuinely differ.
+        // A step can also be SQL you write, in which case you write both
+        // directions. `raw` runs the same statements on every backend; `step`
+        // takes closures and renders per dialect, for the cases where they
+        // genuinely differ.
         .raw(
             "0003_index_posts_author",
             vec!["CREATE INDEX IF NOT EXISTS idx_posts_author ON posts (author_id)".into()],
+            vec!["DROP INDEX IF EXISTS idx_posts_author".into()],
         )
     // Switching a driver to the database needs its tables; merge them in here
     // so `migrate` creates them:
@@ -41,6 +49,16 @@ mod tests {
         assert_eq!(
             all().names(),
             vec!["0001_create_users", "0002_create_posts", "0003_index_posts_author"]
+        );
+    }
+
+    #[test]
+    fn every_migration_can_be_rolled_back() {
+        // Worth asserting rather than assuming: the day you need a rollback is
+        // not the day to discover a step opted out of one.
+        assert!(
+            all().irreversible(rainier_framework::database::Dialect::Sqlite).is_empty(),
+            "add the reason here deliberately if a step ever becomes irreversible"
         );
     }
 

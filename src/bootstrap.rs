@@ -192,7 +192,11 @@ fn cache(env: &Env) -> Arc<dyn Cache> {
 /// `DATABASE_URL` at MySQL or Postgres and nothing else changes — that is the
 /// ORM's whole premise.
 async fn connect(mode: Mode) -> Result<Database> {
-    use polyormous::{PoolConfig, SeaOrmExecutor};
+    // The pool config is the ORM's; the executor is a *driver*. Rainier keeps
+    // service interfacing in `rainier-drivers` so the ORM core has no optional
+    // dependencies and stays compilable for wasm.
+    use rainier_framework::drivers::sql::SeaOrmExecutor;
+    use rainier_orm::PoolConfig;
 
     let url = rainier_framework::config::Env::load_or_default(".env")
         .string("DATABASE_URL", "sqlite::memory:");
@@ -210,9 +214,9 @@ async fn connect(mode: Mode) -> Result<Database> {
         .await
         .map_err(|e| Error::internal(format!("could not connect to `{url}`: {e}")))?;
 
-    // No `bind_executor!` here: `SeaOrmExecutor` belongs to polyORMous and
-    // `Connection` to the framework, so the orphan rule puts that impl out of
-    // an application's reach. Rainier ships it behind the `sea-orm-executor`
+    // No `bind_executor!` here: `SeaOrmExecutor` belongs to `rainier-drivers`
+    // and `Connection` to the framework, so the orphan rule puts that impl out
+    // of an application's reach. Rainier ships it behind the `sea-orm-executor`
     // feature, which this crate enables. Use `bind_executor!` for an executor
     // *you* wrote.
     Ok(Database::new(executor))
