@@ -13,6 +13,10 @@ rainier-framework = { git = "https://github.com/safewords/rainier-framework.git"
     "sea-orm-executor",
 ] }
 
+# Cache and session drivers are opt-in, so a build only compiles the clients it
+# needs. Add "redis", "redis-cluster" or "memcached" to the features above to
+# make CACHE_DRIVER / SESSION_DRIVER=cache able to select them.
+
 # `#[derive(Entity)]` expands to `::polyormous::…`, an absolute path, so any
 # crate defining a model needs polyORMous as a direct dependency — the
 # framework's re-export is not enough to satisfy it.
@@ -26,6 +30,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 tracing = "0.1"
+
+# Cache and session drivers. Enable one to make CACHE_DRIVER able to select it;
+# without the feature, the driver falls back to memory with a warning rather
+# than failing, because a cache is the one dependency an app should be able to
+# lose.
+[features]
+default = []
+redis = ["rainier-framework/redis"]
+redis-cluster = ["redis", "rainier-framework/redis-cluster"]
+memcached = ["rainier-framework/memcached"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

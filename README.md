@@ -111,6 +111,7 @@ things a Laravel developer trips over first.
 | migration | `database/migrations.rs` | — (append to `all()`) |
 | service | anywhere | `app/providers/app_provider.rs` |
 | config section | `config/` | one line in `config/mod.rs` |
+| cache or session driver | — | `.env`, plus the cargo feature |
 
 ## Testing
 
@@ -158,9 +159,13 @@ encrypted — so it warns.
   `app/providers/app_provider.rs`) and run `cargo run -- queue:work`.
 - **Mail.** `MAIL_DRIVER=log` writes to the log. `file` writes `.eml` files you
   can open in a browser.
-- **Sessions.** `SESSION_DRIVER=memory` is per-process. Switch to `database`
-  (merge `DatabaseSessionStore::migrations()` into `database/migrations.rs`) and
-  set `SESSION_SECURE=true`.
+- **Sessions.** `SESSION_DRIVER=memory` is per-process. Pick one of:
+  `database` (merge `DatabaseSessionStore::migrations()` into
+  `database/migrations.rs`; never evicts), `cache` (Redis or Memcached, expires
+  itself, can evict), or `cookie` (no server state, and no way to revoke a
+  session). Set `SESSION_SECURE=true` whichever you choose.
+- **Cache.** `CACHE_DRIVER=redis` with `cargo build --features redis`, or
+  `redis-cluster` for a sharded cluster, or `memcached`.
 - **Keys.** Set `APP_KEY`. Rotate by moving the old one into
   `APP_PREVIOUS_KEYS` and putting a new one in `APP_KEY`.
 - **Debug.** `APP_DEBUG=false` — with it on, internal error messages reach the

@@ -6,12 +6,15 @@
 
 use std::sync::Arc;
 
+use rainier_framework::cache::{Cache, MemoryCache};
 use rainier_framework::config::Env;
+use rainier_framework::crypt::{Encryption, Key, KeyRing};
 use rainier_framework::database::Database;
 use rainier_framework::http::SameSite;
 use rainier_framework::prelude::*;
 use rainier_framework::session::{
-    DatabaseSessionStore, MemorySessionStore, SessionConfig, SessionManager, SessionStore,
+    CacheSessionStore, CookieSessionStore, DatabaseSessionStore, MemorySessionStore, SessionConfig,
+    SessionManager, SessionStore,
 };
 use rainier_framework::view::BladeEngine;
 
@@ -86,6 +89,20 @@ fn sessions(env: &Env, database: &Database) -> SessionManager {
 
     let store: Arc<dyn SessionStore> = match env.string("SESSION_DRIVER", "memory").as_str() {
         "database" => Arc::new(DatabaseSessionStore::new(database.clone()).with_lifetime(lifetime)),
+
+        // The whole session, encrypted, in the cookie. No server state at all —
+        // and therefore no way to revoke a session. See the docs before
+        // choosing it.
+        "cookie" => Arc::new(CookieSessionStore::new(Encryption::from_keys(
+            KeyRing::from_base64(&env.string("APP_KEY", ""), &[])
+                .unwrap_or_else(|_| KeyRing::new(Key::generate())),
+        ))),
+
+        // Sessions in whatever the cache is pointed at — Redis, a Redis
+        // Cluster, or Memcached, all behind one port. The cache expires them
+        // itself, so nothing has to sweep.
+        "cache" => Arc::new(CacheSessionStore::new(cache(env)).with_lifetime(lifetime)),
+
         // Anything unrecognised falls back to memory rather than failing the
         // boot: a typo in a driver name should not take the application down,
         // and the log line says what happened.
@@ -105,6 +122,68 @@ fn sessions(env: &Env, database: &Database) -> SessionManager {
             .same_site(SameSite::Lax)
             .lifetime(lifetime),
     )
+}
+
+/// Build the cache from `config/cache.rs`.
+///
+/// The Redis and Memcached drivers are behind cargo features, so a build that
+/// does not enable one cannot select it — which is a compile-time answer to
+/// "why is my cache in memory", rather than a runtime surprise.
+fn cache(env: &Env) -> Arc<dyn Cache> {
+    let driver = env.string("CACHE_DRIVER", "memory");
+
+    #[cfg(feature = "redis")]
+    if driver == "redis" || driver == "redis-cluster" {
+        use rainier_framework::drivers::RedisConnector;
+
+        let url = env.string("REDIS_URL", "redis://127.0.0.1:6379/");
+        let connector = if driver == "redis-cluster" {
+            #[cfg(feature = "redis-cluster")]
+            {
+                let seeds: Vec<String> = url.split(',').map(str::trim).map(String::from).collect();
+                RedisConnector::open_cluster(seeds)
+            }
+            #[cfg(not(feature = "redis-cluster"))]
+            {
+                tracing::error!("CACHE_DRIVER=redis-cluster needs the `redis-cluster` feature");
+                RedisConnector::open(&url)
+            }
+        } else {
+            RedisConnector::open(&url)
+        };
+
+        // Connecting is async and this is not, so the connection is opened
+        // lazily on a blocking handle. A cache that is briefly unreachable must
+        // not stop the application booting, so a failure here falls back to
+        // memory with a loud line rather than aborting.
+        match connector.and_then(|connector| {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(rainier_framework::cache::RedisCache::connect(connector))
+            })
+        }) {
+            Ok(redis) => return Arc::new(redis),
+            Err(e) => tracing::error!(error = %e.message(), "could not reach Redis; using memory"),
+        }
+    }
+
+    #[cfg(feature = "memcached")]
+    if driver == "memcached" {
+        use rainier_framework::cache::MemcachedCache;
+        use rainier_framework::drivers::MemcachedConnector;
+
+        let url = env.string("MEMCACHED_URL", "127.0.0.1:11211");
+        return Arc::new(MemcachedCache::new(MemcachedConnector::open(url)));
+    }
+
+    if driver != "memory" {
+        tracing::warn!(
+            driver = %driver,
+            "CACHE_DRIVER is not available in this build; using memory. Enable the matching \
+             cargo feature."
+        );
+    }
+    Arc::new(MemoryCache::new())
 }
 
 /// Open the database.

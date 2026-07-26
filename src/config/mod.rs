@@ -10,6 +10,7 @@
 //!   mod.rs        the entry point, calling each section
 //!   app.rs        config/app.php
 //!   session.rs    config/session.php
+//!   cache.rs      config/cache.php
 //!   mail.rs       config/mail.php
 //!   posts.rs      config/posts.php — an application's own section
 //! ```
@@ -37,6 +38,7 @@ use rainier_framework::config::{Config, Env};
 use rainier_framework::prelude::*;
 
 pub mod app;
+pub mod cache;
 pub mod mail;
 pub mod posts;
 pub mod session;
@@ -50,6 +52,7 @@ pub mod session;
 pub fn configure(config: &Config, env: &Env) -> Result<()> {
     app::configure(config, env)?;
     session::configure(config, env)?;
+    cache::configure(config, env)?;
     mail::configure(config, env)?;
     posts::configure(config, env)?;
     Ok(())
@@ -85,7 +88,9 @@ mod tests {
         let config = Config::new();
         configure(&config, &Env::new()).unwrap();
 
-        for key in ["app.name", "session.driver", "mail.file_path", "posts.per_page"] {
+        for key in
+            ["app.name", "session.driver", "cache.driver", "mail.file_path", "posts.per_page"]
+        {
             assert!(config.has(key), "`{key}` was not set — is its section wired into configure?");
         }
     }
