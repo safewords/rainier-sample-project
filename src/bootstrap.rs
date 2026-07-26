@@ -19,9 +19,7 @@ use rainier_framework::session::{
 use rainier_framework::view::BladeEngine;
 
 use crate::app::http::kernel;
-use crate::app::providers::{
-    AppServiceProvider, EventServiceProvider, RepositoryServiceProvider,
-};
+use crate::app::providers::{AppServiceProvider, EventServiceProvider, RepositoryServiceProvider};
 use crate::config;
 use crate::routes;
 

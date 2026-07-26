@@ -24,11 +24,9 @@ pub fn migration() -> Step {
 
 fn up(dialect: Dialect) -> Vec<String> {
     match dialect {
-        Dialect::Postgres => vec![
-            "CREATE INDEX IF NOT EXISTS posts_search \
+        Dialect::Postgres => vec!["CREATE INDEX IF NOT EXISTS posts_search \
              ON posts USING gin (to_tsvector('english', title || ' ' || body))"
-                .into(),
-        ],
+            .into()],
 
         // A virtual table rather than an index, so the `down` is a DROP TABLE.
         Dialect::Sqlite => {

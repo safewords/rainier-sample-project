@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The framework is a git dependency with no version to pin against, so `main`
+  # moving is a change to this application's build with no commit here to
+  # trigger it. A weekly run is what notices.
+  schedule:
+    - cron: "0 7 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: fmt and clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: default, flags: "" }
+          - { name: redis, flags: "--features redis" }
+          - { name: redis-cluster, flags: "--features redis-cluster" }
+          - { name: memcached, flags: "--features memcached" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
+      # The feature combinations are here because the driver arms in
+      # `bootstrap::cache` are `#[cfg]`-gated, so a build without the feature
+      # never compiles them — which is exactly how `--features redis` stayed
+      # broken for a while without anybody noticing.
+      - run: cargo clippy --all-targets ${{ matrix.flags }} -- -D warnings
+      - run: cargo test ${{ matrix.flags }}
+
+  migrations:
+    name: migrations round-trip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Against a real SQLite file, not the in-memory default: the point is to
+      # exercise the ledger across three separate processes, which an in-memory
+      # database cannot do because it dies with its connection.
+      - name: migrate, refuse a rollback, migrate again
+        env:
+          DATABASE_URL: "sqlite://ci.sqlite?mode=rwc"
+          RUST_LOG: warn
+        run: |
+          set -euo pipefail
+
+          cargo run --quiet -- migrate | tee first.txt
+          grep -q "0001_create_users" first.txt
+
+          # `0005_normalise_emails` is deliberately irreversible, so a rollback
+          # of that batch must refuse — and refuse with a non-zero exit, or a
+          # deploy script chaining one would carry on against a schema it did
+          # not change.
+          if cargo run --quiet -- migrate:rollback; then
+            echo "::error::migrate:rollback should have refused the irreversible step"
+            exit 1
+          fi
+
+          # Nothing may have come off: the refusal is checked up front, so the
+          # reversible steps in the batch must all still be applied.
+          cargo run --quiet -- migrate | tee second.txt
+          grep -q "Nothing to migrate" second.txt
+
+  routes:
+    name: the application boots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # `route:list` compiles the router, which builds every middleware — so
+      # this fails if a group resolves something the container does not bind.
+      # The cheapest possible smoke test of the whole wiring.
+      - run: cargo run --quiet -- route:list
+        env:
+          RUST_LOG: warn
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: rainier-sample:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Building the image proves it compiles. Running it proves the binary
+      # starts, finds its templates and answers — a different claim, and the
+      # one that actually breaks.
+      - name: the container serves
+        run: |
+          set -euo pipefail
+
+          docker run --rm --detach --name rainier-ci \
+            --publish 8000:8000 \
+            --env APP_KEY="base64:$(openssl rand -base64 32)" \
+            rainier-sample:ci
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/health; then
+              echo "healthy after ${attempt}s"
+              docker rm --force rainier-ci
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "::error::the container never answered /health"
+          docker logs rainier-ci
+          docker rm --force rainier-ci
+          exit 1

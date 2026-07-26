@@ -34,10 +34,9 @@ mod tests {
     #[test]
     fn it_renders_and_addresses_correctly() {
         let views = MemoryEngine::new().with("mail.welcome", "<p>Hi {{ name }}!</p>");
-        let message =
-            WelcomeMail { name: "Ada".into(), email: "ada@example.com".into() }
-                .build(&views)
-                .unwrap();
+        let message = WelcomeMail { name: "Ada".into(), email: "ada@example.com".into() }
+            .build(&views)
+            .unwrap();
 
         assert_eq!(message.envelope.subject, "Welcome, Ada");
         assert_eq!(message.envelope.to[0].email, "ada@example.com");
@@ -47,12 +46,10 @@ mod tests {
     #[test]
     fn view_data_is_escaped() {
         let views = MemoryEngine::new().with("mail.welcome", "<p>Hi {{ name }}!</p>");
-        let message = WelcomeMail {
-            name: "<script>alert(1)</script>".into(),
-            email: "a@b.co".into(),
-        }
-        .build(&views)
-        .unwrap();
+        let message =
+            WelcomeMail { name: "<script>alert(1)</script>".into(), email: "a@b.co".into() }
+                .build(&views)
+                .unwrap();
 
         assert!(!message.html.unwrap().contains("<script>"));
     }

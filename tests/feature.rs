@@ -44,23 +44,13 @@ impl App {
     }
 
     async fn json(&self, request: Request) -> serde_json::Value {
-        let bytes = self
-            .send(request)
-            .await
-            .into_http()
-            .into_body()
-            .collect()
-            .await
-            .expect("a body");
+        let bytes =
+            self.send(request).await.into_http().into_body().collect().await.expect("a body");
         serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
     }
 
     fn get(&self, uri: &str) -> Request {
-        Request::builder()
-            .method(Method::GET)
-            .uri(uri)
-            .header("accept", "application/json")
-            .build()
+        Request::builder().method(Method::GET).uri(uri).header("accept", "application/json").build()
     }
 
     /// Register a user and log in, returning the API token.
@@ -86,7 +76,12 @@ impl App {
         body["token"].as_str().expect("a token").to_string()
     }
 
-    fn authed(&self, method: Method, uri: &str, token: &str) -> rainier_framework::http::RequestBuilder {
+    fn authed(
+        &self,
+        method: Method,
+        uri: &str,
+        token: &str,
+    ) -> rainier_framework::http::RequestBuilder {
         Request::builder()
             .method(method)
             .uri(uri)
@@ -99,7 +94,9 @@ impl App {
     }
 
     fn mail(&self) -> Arc<rainier_framework::mail::MemoryTransport> {
-        self.app.resolve::<rainier_framework::mail::MemoryTransport>().expect("the memory transport")
+        self.app
+            .resolve::<rainier_framework::mail::MemoryTransport>()
+            .expect("the memory transport")
     }
 }
 
@@ -253,9 +250,7 @@ async fn global_middleware_trims_input_before_the_contract_sees_it() {
 #[tokio::test]
 async fn the_index_lists_only_published_posts() {
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse")
-        .await
-        .unwrap();
+    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
     let posts = app.posts();
 
     posts.create_unique(Post::draft("A draft", "body", author.id)).await.unwrap();
@@ -271,23 +266,16 @@ async fn the_index_lists_only_published_posts() {
 #[tokio::test]
 async fn an_unpublished_post_is_a_404_rather_than_a_leak() {
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse")
-        .await
-        .unwrap();
+    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
     app.posts().create_unique(Post::draft("Secret Draft", "body", author.id)).await.unwrap();
 
-    assert_eq!(
-        app.send(app.get("/api/posts/secret-draft")).await.status(),
-        StatusCode::NOT_FOUND
-    );
+    assert_eq!(app.send(app.get("/api/posts/secret-draft")).await.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
 async fn a_slug_collision_gets_a_suffix() {
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse")
-        .await
-        .unwrap();
+    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
     let posts = app.posts();
 
     let first = posts.create_unique(Post::draft("Same Title", "b", author.id)).await.unwrap();
@@ -326,11 +314,9 @@ async fn publishing_queues_a_notification_instead_of_sending_it_inline() {
     let token = app.login().await;
     create_post(&app, &token, "Going live").await;
 
-    let response = app
-        .send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build())
-        .await;
+    let response =
+        app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
     assert_eq!(response.status(), StatusCode::OK);
-
 
     let queue = app.app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
     assert_eq!(queue.queue().size("mail").await.unwrap(), 1);
@@ -349,7 +335,9 @@ async fn the_queued_notification_sends_the_mail_when_a_worker_runs() {
         Arc::clone(manager.registry()),
         Arc::clone(app.app.container()),
     )
-    .with_options(rainier_framework::queue::WorkerOptions::default().queues(["mail"]).stop_when_empty());
+    .with_options(
+        rainier_framework::queue::WorkerOptions::default().queues(["mail"]).stop_when_empty(),
+    );
 
     let before = app.mail().count();
     let stats = worker.run().await.unwrap();
@@ -370,7 +358,6 @@ async fn publishing_twice_does_not_queue_a_second_notification() {
         app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
     }
 
-
     let queue = app.app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
     assert_eq!(queue.queue().size("mail").await.unwrap(), 1);
 }
@@ -380,9 +367,8 @@ async fn the_policy_stops_you_touching_someone_elses_post() {
     let app = App::boot().await;
     let token = app.login().await;
 
-    let other = register_user(&app.app, "Grace", "grace@example.com", "another-password")
-        .await
-        .unwrap();
+    let other =
+        register_user(&app.app, "Grace", "grace@example.com", "another-password").await.unwrap();
     app.posts().create_unique(Post::draft("Not Yours", "body", other.id)).await.unwrap();
 
     for uri in ["/api/posts/not-yours/publish"] {
@@ -392,9 +378,7 @@ async fn the_policy_stops_you_touching_someone_elses_post() {
         );
     }
     assert_eq!(
-        app.send(app.authed(Method::DELETE, "/api/posts/not-yours", &token).build())
-            .await
-            .status(),
+        app.send(app.authed(Method::DELETE, "/api/posts/not-yours", &token).build()).await.status(),
         StatusCode::FORBIDDEN
     );
 }

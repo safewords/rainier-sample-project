@@ -1,0 +1,25 @@
+# The build context is copied into the daemon; keep it to what the image needs.
+
+# 20 GB of build artifacts, and none of them are for the image's platform.
+/target
+
+# The local development override. It patches `rainier-framework` to a sibling
+# checkout that does not exist inside the container, so a build with this file
+# present fails to resolve the dependency. Git ignores it; Docker has to be
+# told separately.
+/.cargo
+
+# Secrets, and per-developer state.
+.env
+*.sqlite
+*.sqlite-journal
+/storage/logs/*
+/storage/mail/*
+
+/.git
+/.github
+/.idea
+/.vscode
+Dockerfile
+.dockerignore
+README.md

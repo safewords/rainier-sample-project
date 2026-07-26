@@ -56,15 +56,9 @@ mod tests {
     use rainier_framework::http::Method;
 
     fn authenticated(body: serde_json::Value) -> Request {
-        Request::builder()
-            .method(Method::POST)
-            .json(&body)
-            .build()
-            .with_extension(AuthenticatedUser(Arc::new(User::new(
-                "Ada",
-                "ada@example.com",
-                String::new(),
-            ))))
+        Request::builder().method(Method::POST).json(&body).build().with_extension(
+            AuthenticatedUser(Arc::new(User::new("Ada", "ada@example.com", String::new()))),
+        )
     }
 
     #[tokio::test]

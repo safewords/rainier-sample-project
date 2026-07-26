@@ -45,8 +45,10 @@ mod tests {
         let config = Config::new();
         configure(
             &config,
-            &Env::parse("CACHE_DRIVER=redis-cluster
-REDIS_URL=redis://a:6379,redis://b:6379"),
+            &Env::parse(
+                "CACHE_DRIVER=redis-cluster
+REDIS_URL=redis://a:6379,redis://b:6379",
+            ),
         )
         .unwrap();
 

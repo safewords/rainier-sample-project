@@ -13,9 +13,7 @@ pub async fn index() -> Result<Response> {
 
     let name: String = Config::instance().get_or("app.name", "Rainier".into());
 
-    let view = ViewTemplate::new("home")
-        .add("title", &name)?
-        .add("posts", &recent.data)?;
+    let view = ViewTemplate::new("home").add("title", &name)?.add("posts", &recent.data)?;
 
     // `Html` rather than `Response::html`, so the content type is set for us.
     Ok(Html(View::instance().render_view(&view)?).into_response())

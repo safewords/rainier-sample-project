@@ -90,9 +90,6 @@ mod tests {
             .build();
 
         let err = LoginRequest::validate_request(&request).await.unwrap_err();
-        assert!(err.details().unwrap()["email"][0]
-            .as_str()
-            .unwrap()
-            .contains("valid email"));
+        assert!(err.details().unwrap()["email"][0].as_str().unwrap().contains("valid email"));
     }
 }

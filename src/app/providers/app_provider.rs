@@ -14,7 +14,9 @@ use rainier_framework::auth::{
     Argon2Hasher, AuthManager, Hasher, RepositoryUserProvider, TokenGuard, UserProvider,
 };
 use rainier_framework::database::{EntityRepository, Migrator, Repository};
-use rainier_framework::mail::{Address, FileTransport, LogTransport, Mailer, MemoryTransport, Transport};
+use rainier_framework::mail::{
+    Address, FileTransport, LogTransport, Mailer, MemoryTransport, Transport,
+};
 use rainier_framework::prelude::*;
 use rainier_framework::queue::{JobRegistry, MemoryQueue, Queue as QueueDriver, QueueManager};
 
@@ -105,8 +107,7 @@ impl AppServiceProvider {
 
             // One guard here. Add a `SessionGuard` under the name "web" for a
             // cookie-based front end, and routes can pick with `auth:web`.
-            Ok(AuthManager::<User>::new("api")
-                .register(Arc::new(TokenGuard::new("api", provider))))
+            Ok(AuthManager::<User>::new("api").register(Arc::new(TokenGuard::new("api", provider))))
         });
     }
 
@@ -120,12 +121,14 @@ impl AppServiceProvider {
                 app.instance_arc(Arc::clone(&memory));
                 memory
             }
-            Mode::Running => match Config::instance().get_or("mail.driver", "log".to_string()).as_str() {
-                "file" => Arc::new(FileTransport::new(
-                    Config::instance().get_or("mail.file_path", "storage/mail".to_string()),
-                )?),
-                _ => Arc::new(LogTransport),
-            },
+            Mode::Running => {
+                match Config::instance().get_or("mail.driver", "log".to_string()).as_str() {
+                    "file" => Arc::new(FileTransport::new(
+                        Config::instance().get_or("mail.file_path", "storage/mail".to_string()),
+                    )?),
+                    _ => Arc::new(LogTransport),
+                }
+            }
         };
 
         app.singleton(move |container: &Container| {

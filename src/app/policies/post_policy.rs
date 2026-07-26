@@ -2,7 +2,6 @@
 
 use rainier_framework::auth::Gate;
 
-
 use crate::app::models::{Post, User};
 
 /// Who may do what to a post.
@@ -59,9 +58,8 @@ mod tests {
     #[test]
     fn a_denial_is_a_403() {
         let theirs = Post::draft("Theirs", "body", 99);
-        let err = PostPolicy::gate()
-            .authorize("posts.publish", &user(1), Some(&theirs))
-            .unwrap_err();
+        let err =
+            PostPolicy::gate().authorize("posts.publish", &user(1), Some(&theirs)).unwrap_err();
 
         assert_eq!(err.status(), 403);
     }

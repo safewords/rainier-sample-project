@@ -44,8 +44,7 @@ pub async fn store(
     let author = current_user(&request)?;
     let posts = resolve::<PostRepository>()?;
 
-    let created =
-        posts.create_unique(Post::draft(input.title, input.body, author.id)).await?;
+    let created = posts.create_unique(Post::draft(input.title, input.body, author.id)).await?;
 
     Ok(Response::json(&created).with_status(StatusCode::CREATED))
 }

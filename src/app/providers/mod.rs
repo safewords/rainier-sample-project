@@ -26,15 +26,11 @@ pub async fn register_user(
     let users = app.resolve::<crate::app::repositories::UserRepository>()?;
     let hasher = app.resolve::<Argon2Hasher>()?;
 
-    let user = users
-        .create(crate::app::models::User::new(name, email, hasher.hash(password)?))
-        .await?;
+    let user =
+        users.create(crate::app::models::User::new(name, email, hasher.hash(password)?)).await?;
 
     app.resolve::<rainier_framework::mail::Mailer>()?
-        .send(&crate::app::mail::WelcomeMail {
-            name: user.name.clone(),
-            email: user.email.clone(),
-        })
+        .send(&crate::app::mail::WelcomeMail { name: user.name.clone(), email: user.email.clone() })
         .await?;
 
     Ok(user)
