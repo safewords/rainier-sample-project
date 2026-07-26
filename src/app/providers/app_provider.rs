@@ -17,6 +17,8 @@ use rainier_framework::database::{EntityRepository, Migrator, Repository};
 use rainier_framework::mail::{
     Address, FileTransport, LogTransport, Mailer, MemoryTransport, Transport,
 };
+use rainier_framework::notifications::DatabaseChannel;
+use rainier_framework::notify::MailChannel;
 use rainier_framework::prelude::*;
 use rainier_framework::queue::{JobRegistry, MemoryQueue, Queue as QueueDriver, QueueManager};
 
@@ -42,6 +44,7 @@ impl ServiceProvider for AppServiceProvider {
         self.hashing(app);
         self.authentication(app);
         self.mail(app)?;
+        self.notifications(app);
         self.queue(app);
 
         app.instance(migrations::all());
@@ -155,6 +158,24 @@ impl AppServiceProvider {
         Ok(())
     }
 
+    fn notifications(&self, app: &Application) {
+        // Bound on its own as well as into the notifier: reading the bell menu
+        // — `unread`, `mark_read` — is the other half of storing rows, and a
+        // controller needs a handle to do it.
+        let database = self.database.clone();
+        app.singleton(move |_: &Container| Ok(DatabaseChannel::new(database.clone())));
+
+        app.singleton(move |container: &Container| {
+            // The **same channels in every mode**, deliberately. A test that
+            // ran a different set would not be testing what production does;
+            // what differs is the mail transport underneath, which is already
+            // in memory when testing.
+            Ok(Notifier::new()
+                .with_arc(container.resolve::<DatabaseChannel>()?)
+                .with(MailChannel::new(container.resolve::<Mailer>()?)))
+        });
+    }
+
     fn queue(&self, app: &Application) {
         app.singleton(move |_: &Container| {
             // Every job the worker must be able to run. A job missing from
@@ -181,8 +202,20 @@ pub struct EventServiceProvider;
 impl EventServiceProvider {
     /// Register this application's listeners.
     pub fn register_listeners(events: &Dispatcher) {
+        // Two listeners on one event, and neither knows about the other —
+        // which is the point of an event. The controller that published the
+        // post knows about neither.
         events.listen(|event: Arc<PostPublished>| async move {
             tracing::info!(slug = %event.post.slug, title = %event.post.title, "post published");
+            Ok(())
+        });
+
+        // Telling the author is *a reaction to* the fact, not the fact itself.
+        // Queued rather than sent here, so a slow mail server cannot slow the
+        // request that published the post — and so a failure is retried
+        // instead of lost.
+        events.listen(|event: Arc<PostPublished>| async move {
+            Queue::instance().dispatch(NotifyAuthor { post_id: event.post.id }).await?;
             Ok(())
         });
     }

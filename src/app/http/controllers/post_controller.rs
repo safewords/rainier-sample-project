@@ -8,7 +8,6 @@ use rainier_framework::auth::AuthenticatedUser;
 use rainier_framework::prelude::*;
 
 use crate::app::http::requests::{ListPostsRequest, StorePostRequest};
-use crate::app::jobs::NotifyAuthor;
 use crate::app::models::{Post, PostPublished, User};
 use crate::app::policies::PostPolicy;
 use crate::app::repositories::PostRepository;
@@ -76,8 +75,10 @@ pub async fn publish(request: Req) -> Result<Response> {
     post.published = true;
     posts.update(&post).await?;
 
+    // One dispatch, and the controller is done. Who reacts — the log line,
+    // the queued notification to the author, whatever is added next — is the
+    // listener list's business, declared in `EventServiceProvider`.
     Event::instance().dispatch(PostPublished { post: post.clone() }).await?;
-    Queue::instance().dispatch(NotifyAuthor { post_id: post.id }).await?;
 
     Ok(Response::json(&post))
 }

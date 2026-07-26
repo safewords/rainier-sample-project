@@ -49,6 +49,32 @@ impl Authenticatable for User {
     }
 }
 
+/// What the framework needs to know to send a user a notification.
+///
+/// The half an [event](crate::app::models::PostPublished) does not have: an
+/// identity, and an address per channel. Returning `None` **skips** that
+/// channel rather than failing the send, so a user with no phone number still
+/// gets the email.
+impl Notifiable for User {
+    fn notifiable_id(&self) -> String {
+        self.id.to_string()
+    }
+
+    /// Stored beside the id, because id `7` is only unique within a type.
+    fn notifiable_type(&self) -> &'static str {
+        "User"
+    }
+
+    fn route_for(&self, channel: &str) -> Option<String> {
+        match channel {
+            "mail" => Some(self.email.clone()),
+            // No phone column yet. Adding one is all an SMS channel needs from
+            // this side.
+            _ => None,
+        }
+    }
+}
+
 impl User {
     /// A new, unsaved user. `password` must already be hashed — see
     /// [`crate::app::providers::register_user`].

@@ -322,13 +322,8 @@ async fn publishing_queues_a_notification_instead_of_sending_it_inline() {
     assert_eq!(queue.queue().size("mail").await.unwrap(), 1);
 }
 
-#[tokio::test]
-async fn the_queued_notification_sends_the_mail_when_a_worker_runs() {
-    let app = App::boot().await;
-    let token = app.login().await;
-    create_post(&app, &token, "Going live").await;
-    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
-
+/// Drain the `mail` queue, as `queue:work` would.
+async fn work_the_mail_queue(app: &App) -> rainier_framework::queue::WorkerStats {
     let manager = app.app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
     let worker = rainier_framework::queue::Worker::new(
         Arc::clone(manager.queue()),
@@ -339,13 +334,82 @@ async fn the_queued_notification_sends_the_mail_when_a_worker_runs() {
         rainier_framework::queue::WorkerOptions::default().queues(["mail"]).stop_when_empty(),
     );
 
+    worker.run().await.unwrap()
+}
+
+#[tokio::test]
+async fn the_queued_notification_sends_the_mail_when_a_worker_runs() {
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+
     let before = app.mail().count();
-    let stats = worker.run().await.unwrap();
+    let stats = work_the_mail_queue(&app).await;
 
     assert_eq!(stats.processed, 1);
     assert_eq!(stats.failed, 0);
     assert_eq!(app.mail().count(), before + 1);
     assert!(app.mail().sent().last().unwrap().envelope.subject.contains("Going live"));
+}
+
+#[tokio::test]
+async fn the_notification_is_addressed_by_the_recipient_not_by_the_message() {
+    // `PostLiveMail` sets no `to`. The address comes from the author's
+    // `route_for("mail")`, which is what makes it a notification.
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+
+    work_the_mail_queue(&app).await;
+
+    let sent = app.mail().sent();
+    let message = sent.last().unwrap();
+    assert_eq!(message.envelope.to.len(), 1);
+    assert_eq!(message.envelope.to[0].email, "ada@example.com");
+}
+
+#[tokio::test]
+async fn one_notification_reaches_every_channel_it_selected() {
+    // `via()` chose mail *and* database, so one send produces an email and a
+    // row. The job asked for neither by name.
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+
+    work_the_mail_queue(&app).await;
+
+    let stored = app.app.resolve::<rainier_framework::notifications::DatabaseChannel>().unwrap();
+    let unread = stored.unread("User", "1", 10).await.unwrap();
+
+    let emails =
+        app.mail().sent().iter().filter(|m| m.envelope.subject.contains("Going live")).count();
+
+    assert_eq!(emails, 1, "the mail channel");
+    assert_eq!(unread.len(), 1, "the database channel");
+    assert_eq!(unread[0].notification, "post.live");
+    assert_eq!(unread[0].data().unwrap()["slug"], "going-live");
+    assert_eq!(stored.unread_count("User", "1").await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn a_stored_notification_can_be_marked_read() {
+    // The bell menu's other half. `unread_count` is what the badge shows.
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+    work_the_mail_queue(&app).await;
+
+    let stored = app.app.resolve::<rainier_framework::notifications::DatabaseChannel>().unwrap();
+    let id = stored.unread("User", "1", 10).await.unwrap()[0].id.clone();
+
+    assert!(stored.mark_read(&id).await.unwrap());
+    assert_eq!(stored.unread_count("User", "1").await.unwrap(), 0);
+    assert!(!stored.mark_read(&id).await.unwrap(), "marking it twice changes nothing");
+    assert_eq!(stored.for_recipient("User", "1", 10).await.unwrap().len(), 1, "still there");
 }
 
 #[tokio::test]

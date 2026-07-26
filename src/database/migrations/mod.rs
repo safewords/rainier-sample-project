@@ -52,8 +52,11 @@ pub fn all() -> Migrator {
         .add(m0003_index_posts_author::migration())
         .add(m0004_add_post_search::migration())
         .add(m0005_normalise_emails::migration())
-    // Switching a driver to the database needs its tables; merge them in here
-    // so `migrate` creates them:
+        // A framework component that needs a table brings its own migration.
+        // The notification channel's rows are what the in-app list reads.
+        .merge(rainier_framework::notifications::DatabaseChannel::migrations())
+    // Switching another driver to the database needs its tables too; merge
+    // them in here so `migrate` creates them:
     //
     // .merge(rainier_framework::queue::DatabaseQueue::migrations())
     // .merge(rainier_framework::session::DatabaseSessionStore::migrations())
@@ -74,6 +77,7 @@ mod tests {
                 "0003_index_posts_author",
                 "0004_add_post_search",
                 "0005_normalise_emails",
+                "rainier_notify_0001_notifications",
             ]
         );
     }

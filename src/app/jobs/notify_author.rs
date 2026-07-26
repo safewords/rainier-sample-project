@@ -1,13 +1,18 @@
 //! `NotifyAuthor` — `app/Jobs/NotifyAuthor.php`.
 
-use rainier_framework::mail::Mailer;
 use rainier_framework::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::app::mail::PostLiveMail;
+use crate::app::notifications::PostLive;
 use crate::app::repositories::{PostRepository, UserRepository};
 
 /// Tells an author their post is live.
+///
+/// Queued by the listener for
+/// [`PostPublished`](crate::app::models::PostPublished), and it sends a
+/// [notification](crate::app::notifications) rather than an email: the job
+/// decides *when*, the notification decides *how*. Adding a channel is then a
+/// change to one `via()` and nothing here.
 ///
 /// The payload is an **id**, not a snapshot of the row. A queued job may run
 /// minutes later, by which time the post could have been edited or deleted —
@@ -34,7 +39,7 @@ impl Job for NotifyAuthor {
         // resolves them from the container instead.
         let posts = context.resolve::<PostRepository>()?;
         let users = context.resolve::<UserRepository>()?;
-        let mailer = context.resolve::<Mailer>()?;
+        let notifier = context.resolve::<Notifier>()?;
 
         // Gone between publishing and now. Not a failure: there is nothing to
         // notify about, and retrying would never succeed.
@@ -47,14 +52,15 @@ impl Job for NotifyAuthor {
             return Ok(());
         };
 
-        mailer
-            .send(&PostLiveMail {
-                name: author.name,
-                email: author.email,
-                title: post.title,
-                slug: post.slug,
-            })
-            .await?;
+        // The receipt says what actually happened on each channel. A user
+        // with no email still gets the database row, and the send does not
+        // fail — a missing address is a skip, not an error.
+        let receipt = notifier.send(&author, &PostLive { post }).await?;
+        tracing::info!(
+            post_id = self.post_id,
+            delivered = ?receipt.delivered(),
+            "notified the author"
+        );
 
         Ok(())
     }
