@@ -31,17 +31,18 @@ src/
   app/
     models/           app/Models         — User, Post
     http/
-      kernel.rs       app/Http/Kernel    — global middleware, aliases, groups
+      kernel.rs       app/Http/Kernel    — global middleware, and the groups
       controllers/    app/Http/Controllers
       middleware/     app/Http/Middleware — an X-Request-Id example
       requests/       app/Http/Requests  — request contracts
-    providers/        app/Providers      — service registration, repositories
+    repositories/     —                  — where the domain's queries get names
+    providers/        app/Providers      — service registration
     jobs/             app/Jobs
     mail/             app/Mail
     policies/         app/Policies
     console/commands/ app/Console/Commands
   database/
-    migrations.rs     database/migrations
+    migrations/       database/migrations — one module per migration
     seeders.rs        database/seeders
   routes/
     web.rs            routes/web.php
@@ -49,7 +50,15 @@ src/
     console.rs        routes/console.php
 resources/views/      resources/views    — templates
 tests/feature.rs      tests/Feature      — end-to-end tests
+Dockerfile            —                  — a two-stage production image
+.github/workflows/    —                  — fmt, clippy, tests, docker
 ```
+
+Two entries have no Laravel counterpart, because PHP has nowhere to put them.
+`repositories/` is where a query gets a name — `published_page` rather than a
+`Criteria` each controller assembles. And `migrations/` is a directory of
+modules listed in `mod.rs` rather than files discovered by timestamp, because
+Rust does not autoload and a list you can read beats a scan you cannot.
 
 ## Commands
 
@@ -59,6 +68,7 @@ cargo run -- serve --port=3000
 cargo run -- route:list             # the route table, with middleware
 cargo run -- route:list --json
 cargo run -- migrate --pretend      # what would run
+cargo run -- migrate:rollback       # undo the last batch
 cargo run -- queue:work --once      # drain the queue
 cargo run -- app:seed --fresh       # your own command
 cargo run -- key:generate           # an APP_KEY to paste into .env
@@ -161,7 +171,7 @@ encrypted — so it warns.
   can open in a browser.
 - **Sessions.** `SESSION_DRIVER=memory` is per-process. Pick one of:
   `database` (merge `DatabaseSessionStore::migrations()` into
-  `database/migrations.rs`; never evicts), `cache` (Redis or Memcached, expires
+  `database/migrations/mod.rs`; never evicts), `cache` (Redis or Memcached, expires
   itself, can evict), or `cookie` (no server state, and no way to revoke a
   session). Set `SESSION_SECURE=true` whichever you choose.
 - **Cache.** `CACHE_DRIVER=redis` with `cargo build --features redis`, or
@@ -170,5 +180,50 @@ encrypted — so it warns.
   `APP_PREVIOUS_KEYS` and putting a new one in `APP_KEY`.
 - **Debug.** `APP_DEBUG=false` — with it on, internal error messages reach the
   client, and those routinely contain a connection string or a query.
+
+## Docker
+
+```sh
+docker build -t rainier-sample .
+
+docker run --rm -p 8000:8000 \
+  -e APP_KEY="base64:$(openssl rand -base64 32)" \
+  -e DATABASE_URL="sqlite:///data/app.sqlite?mode=rwc" \
+  -v rainier-data:/data \
+  rainier-sample
+```
+
+Two stages: a builder with the toolchain, and a Debian slim runtime holding the
+binary, the templates and nothing else. It runs as a non-root user and
+`HEALTHCHECK` curls `/health`.
+
+Note the volume. `DATABASE_URL` defaults to `sqlite::memory:`, which is wiped
+when the container stops — fine for a smoke test and wrong for anything else.
+Point it at a mounted path or a real server.
+
+`.dockerignore` excludes `.cargo/config.toml`, which is the local development
+override pointing at a sibling checkout of the framework. Git ignores it;
+Docker has to be told separately, and a build with it present cannot resolve
+the dependency.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request, and weekly —
+the framework is a git dependency with no version to pin against, so `main`
+moving changes this build with no commit here to trigger it.
+
+| Job | Checks |
+|---|---|
+| `check` | `cargo fmt --check`, `cargo clippy -D warnings` |
+| `test` | the suite under each of the four feature combinations |
+| `migrations` | migrate → rollback → migrate, against a real SQLite file |
+| `routes` | `route:list`, which compiles the router and builds every middleware |
+| `docker` | builds the image, starts it, and waits for `/health` |
+
+The last three assert behaviour rather than compilation. `migrations` requires
+the rollback to **fail**, because `0005_normalise_emails` is deliberately
+irreversible and a deploy script chaining one has to stop. `docker` runs the
+image because building one and running one are different claims, and the
+second is the one that breaks.
 
 [Rainier]: https://github.com/safewords/rainier-framework
