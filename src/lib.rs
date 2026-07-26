@@ -6,7 +6,7 @@
 //! ```text
 //! src/
 //!   bootstrap.rs        bootstrap/app.php   — assembles and boots the app
-//!   config.rs           config/*.php        — configuration, read from .env
+//!   config/             config/*.php        — one module per concern
 //!   app/
 //!     models/           app/Models          — entities the framework manages
 //!     http/

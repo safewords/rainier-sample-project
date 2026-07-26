@@ -488,3 +488,139 @@ async fn seeding_is_idempotent() {
     app::database::seeders::seed(&app.app).await.unwrap();
     assert_eq!(app.posts().count().await.unwrap(), after_first, "running twice adds nothing");
 }
+
+// --- sessions and encryption -------------------------------------------------
+
+/// The session cookie a response set, if any.
+fn session_cookie(response: &Response) -> Option<String> {
+    response
+        .header("set-cookie")?
+        .split(';')
+        .next()?
+        .strip_prefix("rainier_session=")
+        .map(str::to_string)
+}
+
+#[tokio::test]
+async fn a_session_counts_visits_across_requests() {
+    let app = App::boot().await;
+
+    let first = app.send(app.get("/visits")).await;
+    let cookie = session_cookie(&first).expect("the session should be persisted");
+
+    let with_cookie = || {
+        Request::builder()
+            .method(Method::GET)
+            .uri("/visits")
+            .header("accept", "application/json")
+            .header("cookie", &format!("rainier_session={cookie}"))
+            .build()
+    };
+
+    assert_eq!(app.json(with_cookie()).await["visits"], 1);
+    assert_eq!(app.json(with_cookie()).await["visits"], 2);
+}
+
+#[tokio::test]
+async fn flash_data_survives_exactly_one_request() {
+    let app = App::boot().await;
+
+    let first = app.send(app.get("/visits")).await;
+    let cookie = session_cookie(&first).expect("a session cookie");
+
+    let with_cookie = || {
+        Request::builder()
+            .method(Method::GET)
+            .uri("/visits")
+            .header("accept", "application/json")
+            .header("cookie", &format!("rainier_session={cookie}"))
+            .build()
+    };
+
+    // The first request flashed a greeting; this one reads it…
+    let second = app.json(with_cookie()).await;
+    assert!(second["flashed_last_time"].is_string(), "{second}");
+
+    // …and it re-flashes, so the next one reads the *new* one rather than the
+    // stale one. What matters is that it is never the same value twice.
+    let third = app.json(with_cookie()).await;
+    assert_ne!(third["flashed_last_time"], second["flashed_last_time"]);
+}
+
+#[tokio::test]
+async fn a_route_outside_the_web_group_gets_no_session_cookie() {
+    // `/api/posts` is not behind `session`, and should not be allocating rows
+    // or setting cookies for every anonymous API call.
+    let app = App::boot().await;
+    let response = app.send(app.get("/api/posts")).await;
+
+    assert!(session_cookie(&response).is_none());
+}
+
+#[tokio::test]
+async fn a_forged_session_cookie_is_replaced_rather_than_trusted() {
+    let app = App::boot().await;
+
+    let response = app
+        .send(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/visits")
+                .header("accept", "application/json")
+                .header("cookie", "rainier_session=chosen-by-the-client")
+                .build(),
+        )
+        .await;
+
+    let issued = session_cookie(&response).expect("a fresh session");
+    assert_ne!(issued, "chosen-by-the-client", "a client must not pick its own session id");
+}
+
+#[tokio::test]
+async fn the_csrf_token_is_stable_within_a_session() {
+    let app = App::boot().await;
+
+    let first = app.send(app.get("/visits")).await;
+    let cookie = session_cookie(&first).expect("a session cookie");
+    let token = app
+        .json(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/visits")
+                .header("accept", "application/json")
+                .header("cookie", &format!("rainier_session={cookie}"))
+                .build(),
+        )
+        .await["csrf_token"]
+        .clone();
+
+    let again = app
+        .json(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/visits")
+                .header("accept", "application/json")
+                .header("cookie", &format!("rainier_session={cookie}"))
+                .build(),
+        )
+        .await["csrf_token"]
+        .clone();
+
+    assert_eq!(token, again, "rotating it per request would break every form");
+}
+
+#[tokio::test]
+async fn encryption_is_wired_and_round_trips() {
+    use rainier_framework::crypt::Encryption;
+
+    let app = App::boot().await;
+    let crypt = app.app.resolve::<Encryption>().expect("encryption should be bound");
+
+    let sealed = crypt.encrypt("a card number").unwrap();
+    assert!(!sealed.contains("card"), "{sealed}");
+    assert_eq!(crypt.decrypt(&sealed).unwrap(), "a card number");
+
+    let signed = crypt.sign("unsubscribe-42").unwrap();
+    assert!(signed.starts_with("unsubscribe-42."), "signing leaves the value readable");
+    assert_eq!(crypt.verify(&signed).unwrap(), "unsubscribe-42");
+}

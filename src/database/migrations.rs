@@ -25,10 +25,11 @@ pub fn all() -> Migrator {
             "0003_index_posts_author",
             vec!["CREATE INDEX IF NOT EXISTS idx_posts_author ON posts (author_id)".into()],
         )
-    // Switching the queue to `DatabaseQueue` needs its two tables; add them
-    // here so `migrate` creates them:
+    // Switching a driver to the database needs its tables; merge them in here
+    // so `migrate` creates them:
     //
-    // .add(…)  // see `rainier_framework::queue::DatabaseQueue::migrations()`
+    // .merge(rainier_framework::queue::DatabaseQueue::migrations())
+    // .merge(rainier_framework::session::DatabaseSessionStore::migrations())
 }
 
 #[cfg(test)]

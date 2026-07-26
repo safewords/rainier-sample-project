@@ -75,8 +75,17 @@ fn aliases(registry: &MiddlewareRegistry) {
 }
 
 /// Bundles of aliases.
+///
+/// Registering a group **replaces** it rather than adding to it, so each of
+/// these has to list everything it wants — including the framework's own
+/// members. Dropping `session` from `web` by writing only `["secure-headers"]`
+/// is the mistake to watch for: nothing fails, and every route in the group
+/// quietly has no session.
 fn groups(registry: &MiddlewareRegistry) {
-    registry.group("web", ["secure-headers"]);
+    registry.group("web", ["secure-headers", "session"]);
+
+    // No `session` here on purpose. An API authenticates per request with a
+    // token, so a session row and a cookie per call would be pure overhead.
     registry.group("api", ["cors", "throttle:60"]);
 }
 
@@ -97,6 +106,21 @@ mod tests {
         for name in ["web", "api"] {
             assert!(registry.has_group(name), "`{name}` group should be registered");
         }
+    }
+
+    #[test]
+    fn the_web_group_still_starts_sessions() {
+        // Registering a group replaces it, so it is easy to drop `session`
+        // while adding something else — and nothing would fail, which is
+        // exactly why this assertion exists.
+        let registry = MiddlewareRegistry::new();
+        registry.alias("session", Arc::new(AddHeaders::new()));
+        register(&registry);
+
+        assert!(
+            registry.resolve_one(&"web".into()).is_ok_and(|stack| stack.len() == 2),
+            "the `web` group should be security headers *and* the session"
+        );
     }
 
     #[test]

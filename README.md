@@ -27,7 +27,7 @@ need.
 src/
   main.rs             artisan            — the console entry point
   bootstrap.rs        bootstrap/app.php  — assembles and boots the app
-  config.rs           config/*.php       — configuration, read from .env
+  config/             config/*.php       — one module per concern
   app/
     models/           app/Models         — User, Post
     http/
@@ -61,6 +61,7 @@ cargo run -- route:list --json
 cargo run -- migrate --pretend      # what would run
 cargo run -- queue:work --once      # drain the queue
 cargo run -- app:seed --fresh       # your own command
+cargo run -- key:generate           # an APP_KEY to paste into .env
 ```
 
 ## The API
@@ -109,6 +110,7 @@ things a Laravel developer trips over first.
 | command | `app/console/commands/` | `routes/console.rs` |
 | migration | `database/migrations.rs` | — (append to `all()`) |
 | service | anywhere | `app/providers/app_provider.rs` |
+| config section | `config/` | one line in `config/mod.rs` |
 
 ## Testing
 
@@ -123,6 +125,31 @@ transport is a double, so a test can assert on what was sent.
 Tests boot an application each and share the process-global facades, so they
 take a lock and run one at a time. Keep that in mind if you add one.
 
+## Sessions and encryption
+
+`GET /visits` is the smallest useful example: a counter in the session, a
+flashed message that survives exactly one further request, and a CSRF token.
+
+```sh
+curl -c jar -b jar localhost:8000/visits
+curl -c jar -b jar localhost:8000/visits    # visits: 1, and the flash arrives
+```
+
+The `web` group includes `session`; the `api` group deliberately does not, so
+an API call authenticating with a token does not allocate a session row and a
+cookie it will never use. A route outside `web` has `request.session() == None`.
+
+Encryption is wired from `APP_KEY`:
+
+```rust
+let sealed = Crypt::instance().encrypt("a card number")?;
+let signed = Crypt::instance().sign("unsubscribe-42")?;   // readable, not editable
+```
+
+Generate a key with `cargo run -- key:generate`. Without one a random key is
+minted per boot, which works and silently invalidates everything the last boot
+encrypted — so it warns.
+
 ## Going to production
 
 - **Database.** Set `DATABASE_URL`. SQLite in memory is wiped on exit.
@@ -131,6 +158,11 @@ take a lock and run one at a time. Keep that in mind if you add one.
   `app/providers/app_provider.rs`) and run `cargo run -- queue:work`.
 - **Mail.** `MAIL_DRIVER=log` writes to the log. `file` writes `.eml` files you
   can open in a browser.
+- **Sessions.** `SESSION_DRIVER=memory` is per-process. Switch to `database`
+  (merge `DatabaseSessionStore::migrations()` into `database/migrations.rs`) and
+  set `SESSION_SECURE=true`.
+- **Keys.** Set `APP_KEY`. Rotate by moving the old one into
+  `APP_PREVIOUS_KEYS` and putting a new one in `APP_KEY`.
 - **Debug.** `APP_DEBUG=false` — with it on, internal error messages reach the
   client, and those routinely contain a connection string or a query.
 

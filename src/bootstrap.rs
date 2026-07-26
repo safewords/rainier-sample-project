@@ -6,8 +6,13 @@
 
 use std::sync::Arc;
 
+use rainier_framework::config::Env;
 use rainier_framework::database::Database;
+use rainier_framework::http::SameSite;
 use rainier_framework::prelude::*;
+use rainier_framework::session::{
+    DatabaseSessionStore, MemorySessionStore, SessionConfig, SessionManager, SessionStore,
+};
 use rainier_framework::view::BladeEngine;
 
 use crate::app::http::kernel;
@@ -31,6 +36,7 @@ pub enum Mode {
 /// Build and boot the application.
 pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
     let database = connect(mode).await?;
+    let env = Env::load_or_default(".env");
 
     let mut builder = Rainier::new(".");
     if mode == Mode::Testing {
@@ -43,10 +49,11 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         .configure(|c| {
             // The builder has already read `.env`; this layers the
             // application's own sections over the framework's defaults.
-            if let Err(e) = config::configure(c, &rainier_framework::config::Env::load_or_default(".env")) {
+            if let Err(e) = config::configure(c, &env) {
                 tracing::error!(error = %e, "configuration failed");
             }
         })
+        .with_sessions(sessions(&env, &database))
         .with_views(Arc::new(
             // Templates are re-read on every render outside production, so an
             // edit shows up without a restart.
@@ -67,6 +74,37 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         })
         .boot()
         .await
+}
+
+/// Build the session store from `config/session.rs`.
+///
+/// A function rather than a line in the builder because the driver is a
+/// branch, and a branch in the middle of a builder chain is where a wiring
+/// mistake hides.
+fn sessions(env: &Env, database: &Database) -> SessionManager {
+    let lifetime = chrono::Duration::seconds(env.int("SESSION_LIFETIME", 7200));
+
+    let store: Arc<dyn SessionStore> = match env.string("SESSION_DRIVER", "memory").as_str() {
+        "database" => Arc::new(DatabaseSessionStore::new(database.clone()).with_lifetime(lifetime)),
+        // Anything unrecognised falls back to memory rather than failing the
+        // boot: a typo in a driver name should not take the application down,
+        // and the log line says what happened.
+        other => {
+            if other != "memory" {
+                tracing::warn!(driver = %other, "unknown SESSION_DRIVER; using memory");
+            }
+            Arc::new(MemorySessionStore::new(lifetime))
+        }
+    };
+
+    SessionManager::with_config(
+        store,
+        SessionConfig::default()
+            .cookie(env.string("SESSION_COOKIE", "rainier_session"))
+            .secure(env.bool("SESSION_SECURE", false))
+            .same_site(SameSite::Lax)
+            .lifetime(lifetime),
+    )
 }
 
 /// Open the database.
