@@ -20,8 +20,8 @@ you want the data to survive — nothing else in the app changes.
 
 Everything is wired and working: models, repositories, a router with groups and
 named routes, request contracts, a token guard, a policy, an event, a queued
-job, mailables, Blade-style views, and a console command. Delete what you do not
-need.
+job, mailables, notifications with an in-app bell menu, Blade-style views, and a
+console command. Delete what you do not need.
 
 ```text
 src/
@@ -39,6 +39,7 @@ src/
     providers/        app/Providers      — service registration
     jobs/             app/Jobs
     mail/             app/Mail
+    notifications/    app/Notifications  — a message to a recipient, over their channels
     policies/         app/Policies
     console/commands/ app/Console/Commands
   database/
@@ -91,6 +92,24 @@ curl -X POST localhost:8000/api/posts \
   -d '{"title":"Hello","body":"A body long enough to clear the minimum."}'
 ```
 
+Publishing a post raises an **event**; a listener queues a **job**; the job
+sends the author a **notification**, which goes out over mail *and* the
+database channel:
+
+```sh
+curl -X POST localhost:8000/api/posts/hello/publish -H "authorization: Bearer $TOKEN"
+curl localhost:8000/api/notifications -H "authorization: Bearer $TOKEN"
+```
+
+The bell menu fills once a worker has run the job. Out of the box the queue is
+`MemoryQueue`, which lives inside one process — so `cargo run -- queue:work`
+in a second terminal will not see it. Switch the driver to `DatabaseQueue` in
+`app/providers/app_provider.rs` (and merge its migrations) and it will; the
+feature tests drive a worker directly and assert on both channels.
+
+An event is a fact with no recipient; a notification is a message to a named
+one. `src/app/notifications/mod.rs` has the table that tells them apart.
+
 ## Two things Rust does differently
 
 Neither is a Rainier decision — both fall out of the language, and both are the
@@ -116,9 +135,10 @@ things a Laravel developer trips over first.
 | middleware | `app/http/middleware/` | `app/http/kernel.rs` |
 | job | `app/jobs/` | the `JobRegistry` in `app/providers/app_provider.rs` |
 | mailable | `app/mail/` | — (constructed where it is sent) |
+| notification | `app/notifications/` | — (constructed where it is sent) |
 | policy | `app/policies/` | — (called from a controller) |
 | command | `app/console/commands/` | `routes/console.rs` |
-| migration | `database/migrations.rs` | — (append to `all()`) |
+| migration | `database/migrations/` | `database/migrations/mod.rs` — append to `all()` |
 | service | anywhere | `app/providers/app_provider.rs` |
 | config section | `config/` | one line in `config/mod.rs` |
 | cache or session driver | — | `.env`, plus the cargo feature |
