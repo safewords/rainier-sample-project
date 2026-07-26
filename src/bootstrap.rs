@@ -71,6 +71,7 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         // repositories first reads as the dependency direction.
         .with_provider(RepositoryServiceProvider { database: database.clone() })
         .with_provider(AppServiceProvider { mode, database })
+        .with_schedule(routes::console::schedule)
         .with_middleware(kernel::register)
         .with_events(EventServiceProvider::register_listeners)
         .with_routes(|router| {

@@ -62,6 +62,16 @@ impl ServiceProvider for AppServiceProvider {
             return Ok(());
         }
 
+        // `on_one_server` over a per-process cache is every machine holding
+        // its own claim and each concluding it is the one. Saying so at boot
+        // beats finding out from a digest that went to everybody three times.
+        let locks = app.resolve::<rainier_framework::cache::LockManager>()?;
+        if !locks.is_shared() {
+            tracing::warn!(
+                "the cache is per-process, so `on_one_server` guarantees nothing — set CACHE_DRIVER to something shared before running the scheduler on more than one machine"
+            );
+        }
+
         // Resolving is legal here and nowhere earlier.
         let database = app.resolve::<Database>()?;
         let migrator = app.resolve::<Migrator>()?;
