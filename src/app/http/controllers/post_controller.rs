@@ -55,26 +55,28 @@ pub async fn index(Validated(query): Validated<ListPostsRequest>) -> Result<Resp
 }
 
 /// `GET /api/posts/{post}` — one post, by slug.
-pub async fn show(request: Req) -> Result<Response> {
-    let slug = route_param(&request, "post")?;
-    let posts = resolve::<PostRepository>()?;
-
-    // Filtered on `published` in the query rather than fetched and then
-    // checked, so an unpublished post is a 404 and not a hint that it exists.
-    let post = posts
-        .published_by_slug(&slug)
-        .await?
-        .ok_or_else(|| Error::not_found("No Post matches the given key."))?;
+///
+/// The lookup and the 404 are both gone from the body: `Bound<Post>` resolves
+/// `{post}` through the model's [route
+/// key](rainier_framework::database::Model::route_key_name), which is the slug.
+/// Laravel's `public function show(Post $post)`.
+///
+/// Binding does not authorise, so the draft check is still this action's job —
+/// and it is a check, not a filtered query, because the model is already here.
+/// A 404 rather than a 403, so an unpublished slug is not confirmed to exist.
+pub async fn show(Bound(post): Bound<Post>) -> Result<Response> {
+    if !post.published {
+        return Err(Error::not_found("No Post matches the given key."));
+    }
 
     Ok(Response::json(&post))
 }
 
 /// `POST /api/posts` — create a draft. Behind `auth:api`.
 pub async fn store(
-    request: Req,
+    author: AuthenticatedUser<User>,
     Validated(input): Validated<StorePostRequest>,
 ) -> Result<Response> {
-    let author = current_user(&request)?;
     let posts = resolve::<PostRepository>()?;
 
     let created = posts.create_unique(Post::draft(input.title, input.body, author.id)).await?;
@@ -88,18 +90,16 @@ pub async fn store(
 /// writes the row, raises an event and queues a job, and the response goes out
 /// immediately. Whether the author's notification succeeds is the worker's
 /// problem, not this request's.
-pub async fn publish(request: Req) -> Result<Response> {
-    let author = current_user(&request)?;
-    let slug = route_param(&request, "post")?;
+pub async fn publish(
+    author: AuthenticatedUser<User>,
+    Bound(mut post): Bound<Post>,
+) -> Result<Response> {
     let posts = resolve::<PostRepository>()?;
 
-    let mut post = posts
-        .first_by("slug", slug.into())
-        .await?
-        .ok_or_else(|| Error::not_found("No Post matches the given key."))?;
-
-    // Authorisation is a policy, not an `if` buried in the controller.
-    PostPolicy::gate().authorize("posts.publish", &author, Some(&post))?;
+    // Authorisation is a policy, not an `if` buried in the controller — and
+    // it is still here, because binding finds the row and says nothing about
+    // who may have it.
+    PostPolicy::gate().authorize("posts.publish", author.get(), Some(&post))?;
 
     if post.published {
         // Publishing twice must not send a second notification.
@@ -118,42 +118,26 @@ pub async fn publish(request: Req) -> Result<Response> {
 }
 
 /// `DELETE /api/posts/{post}` — delete your own post. Behind `auth:api`.
-pub async fn destroy(request: Req) -> Result<Response> {
-    let author = current_user(&request)?;
-    let slug = route_param(&request, "post")?;
-    let posts = resolve::<PostRepository>()?;
-
-    let post = posts
-        .first_by("slug", slug.into())
-        .await?
-        .ok_or_else(|| Error::not_found("No Post matches the given key."))?;
-
-    PostPolicy::gate().authorize("posts.delete", &author, Some(&post))?;
-    posts.delete(post.id.into()).await?;
+pub async fn destroy(
+    author: AuthenticatedUser<User>,
+    Bound(post): Bound<Post>,
+) -> Result<Response> {
+    PostPolicy::gate().authorize("posts.delete", author.get(), Some(&post))?;
+    resolve::<PostRepository>()?.delete(post.id.into()).await?;
 
     Ok(Response::no_content())
 }
 
 // --- helpers ---------------------------------------------------------------
-
-/// The user the `auth` middleware resolved.
-///
-/// A `401` rather than a panic if it is absent: moving the route out from
-/// behind `auth` should be a wrong answer, not a crash.
-pub(crate) fn current_user(request: &Request) -> Result<User> {
-    request
-        .extension::<AuthenticatedUser<User>>()
-        .map(|user| user.get().clone())
-        .ok_or_else(|| Error::unauthenticated("Unauthenticated."))
-}
-
-/// A route parameter the router captured.
-pub(crate) fn route_param(request: &Request, name: &str) -> Result<String> {
-    request
-        .route_param(name)
-        .map(str::to_string)
-        .ok_or_else(|| Error::bad_request(format!("the route is missing its `{name}` parameter")))
-}
+//
+// There used to be two more here: `current_user`, which dug the user out of
+// the request's extensions, and `route_param`, which pulled `{post}` out and
+// left the caller to look the row up. Both are gone, and neither was replaced
+// by another helper — an action now *asks* for what it needs
+// (`AuthenticatedUser<User>`, `Bound<Post>`) and the framework supplies it.
+//
+// That is the difference between a controller that starts with four lines of
+// unpacking and one whose signature says what it is about.
 
 /// Resolve a service from the container.
 pub(crate) fn resolve<T: Send + Sync + 'static>() -> Result<Arc<T>> {
@@ -164,16 +148,29 @@ pub(crate) fn resolve<T: Send + Sync + 'static>() -> Result<Arc<T>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_request_that_skipped_the_auth_middleware_is_a_401_not_a_panic() {
-        let err = current_user(&Request::builder().build()).unwrap_err();
-        assert_eq!(err.status(), 401);
+    #[tokio::test]
+    async fn an_action_that_asks_for_the_user_gets_a_401_without_the_middleware() {
+        // The extractor answers this now, so the guarantee is the framework's
+        // rather than this application's — but it is the one this application
+        // relies on, so it is still asserted here.
+        use rainier_framework::http::FromRequest;
+
+        let request = Arc::new(Request::builder().build());
+        let extracted = AuthenticatedUser::<User>::from_request(request).await;
+
+        assert_eq!(extracted.expect_err("no user on the request").status(), 401);
     }
 
-    #[test]
-    fn a_missing_route_parameter_is_a_400() {
-        let err = route_param(&Request::builder().build(), "post").unwrap_err();
-        assert_eq!(err.status(), 400);
-        assert!(err.message().contains("post"));
+    #[tokio::test]
+    async fn binding_a_model_the_route_cannot_supply_is_a_wiring_error() {
+        // Not a 404 and not a 400: the route has no `{post}` at all, which is
+        // a mistake in `routes/api.rs` rather than anything the caller did.
+        use rainier_framework::http::FromRequest;
+
+        let request = Arc::new(Request::builder().build());
+        let err = Bound::<Post>::from_request(request).await.err().expect("nothing to bind");
+
+        assert_eq!(err.status(), 500);
+        assert!(err.message().contains("{post}"), "{}", err.message());
     }
 }

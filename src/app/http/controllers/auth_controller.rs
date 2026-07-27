@@ -3,7 +3,9 @@
 use rainier_framework::auth::{generate_session_id, Argon2Hasher, Hasher};
 use rainier_framework::prelude::*;
 
-use crate::app::http::controllers::post_controller::{current_user, resolve};
+use crate::app::models::User;
+
+use crate::app::http::controllers::post_controller::resolve;
 use crate::app::http::requests::LoginRequest;
 use crate::app::repositories::UserRepository;
 
@@ -29,10 +31,13 @@ pub async fn login(Validated(input): Validated<LoginRequest>) -> Result<Response
 }
 
 /// `POST /logout` — revoke the current token. Behind `auth:api`.
-pub async fn logout(request: Req) -> Result<Response> {
-    let mut user = current_user(&request)?;
+pub async fn logout(user: AuthenticatedUser<User>) -> Result<Response> {
     let users = resolve::<UserRepository>()?;
 
+    // A clone because the extractor hands out a shared handle: two requests
+    // for the same user hold the same `Arc`, so this one revokes its own copy
+    // and writes that.
+    let mut user = user.get().clone();
     user.api_token = None;
     users.update(&user).await?;
 
@@ -40,6 +45,6 @@ pub async fn logout(request: Req) -> Result<Response> {
 }
 
 /// `GET /api/me` — the authenticated user. Behind `auth:api`.
-pub async fn me(request: Req) -> Result<Response> {
-    Ok(Response::json(&current_user(&request)?))
+pub async fn me(user: AuthenticatedUser<User>) -> Result<Response> {
+    Ok(Response::json(user.get()))
 }

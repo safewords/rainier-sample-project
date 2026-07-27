@@ -41,6 +41,10 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
     let database = connect(mode).await?;
     let env = Env::load_or_default(".env");
 
+    // One registry, shared between the socket handler and anything else that
+    // wants to push into a room.
+    let rooms = Arc::new(rainier_framework::websocket::Rooms::new());
+
     let mut builder = Rainier::new(".");
     if mode == Mode::Testing {
         // A test suite boots an application per test; installing a global
@@ -71,6 +75,11 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         // repositories first reads as the dependency direction.
         .with_provider(RepositoryServiceProvider { database: database.clone() })
         .with_provider(AppServiceProvider { mode, database })
+        // Sockets, on the same port as everything above. The `Rooms` registry
+        // is bound too, so a controller can push into a room from an ordinary
+        // HTTP request — which is most of what a socket is for.
+        .with_websockets(routes::ws::routes(Arc::clone(&rooms)))
+        .with_instance_arc(rooms)
         .with_schedule(routes::console::schedule)
         .with_middleware(kernel::register)
         .with_events(EventServiceProvider::register_listeners)

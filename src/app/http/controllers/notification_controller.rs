@@ -11,27 +11,26 @@
 use rainier_framework::notifications::DatabaseChannel;
 use rainier_framework::prelude::*;
 
-use crate::app::http::controllers::post_controller::{current_user, resolve, route_param};
-
-/// How many to return when the caller does not say. A bell menu is a preview,
-/// not an archive.
-const DEFAULT_LIMIT: u64 = 20;
+use crate::app::http::controllers::post_controller::resolve;
+use crate::app::http::requests::ListNotificationsRequest;
+use crate::app::models::User;
 
 /// `GET /api/notifications` — this user's notifications, newest first.
 ///
 /// `?unread=1` narrows it to the ones they have not seen.
-pub async fn index(request: Req) -> Result<Response> {
-    let user = current_user(&request)?;
+pub async fn index(
+    user: AuthenticatedUser<User>,
+    Validated(query): Validated<ListNotificationsRequest>,
+) -> Result<Response> {
     let stored = resolve::<DatabaseChannel>()?;
-    let unread_only = request.query()["unread"] == "1";
 
     // Scoped to the caller, in the query. Fetching and then filtering would
     // make "whose is this?" a thing the controller has to remember, and one
     // day it would forget.
-    let rows = if unread_only {
-        stored.unread(user.notifiable_type(), &user.notifiable_id(), DEFAULT_LIMIT).await?
+    let rows = if query.unread {
+        stored.unread(user.notifiable_type(), &user.notifiable_id(), query.limit).await?
     } else {
-        stored.for_recipient(user.notifiable_type(), &user.notifiable_id(), DEFAULT_LIMIT).await?
+        stored.for_recipient(user.notifiable_type(), &user.notifiable_id(), query.limit).await?
     };
 
     let unread = stored.unread_count(user.notifiable_type(), &user.notifiable_id()).await?;
@@ -43,9 +42,7 @@ pub async fn index(request: Req) -> Result<Response> {
 }
 
 /// `POST /api/notifications/{notification}/read` — mark one as read.
-pub async fn read(request: Req) -> Result<Response> {
-    let user = current_user(&request)?;
-    let id = route_param(&request, "notification")?;
+pub async fn read(user: AuthenticatedUser<User>, Path(id): Path<String>) -> Result<Response> {
     let stored = resolve::<DatabaseChannel>()?;
 
     // Scoped to the caller in the lookup. An id is an opaque string, not a
@@ -62,8 +59,7 @@ pub async fn read(request: Req) -> Result<Response> {
 }
 
 /// `POST /api/notifications/read` — mark them all as read.
-pub async fn read_all(request: Req) -> Result<Response> {
-    let user = current_user(&request)?;
+pub async fn read_all(user: AuthenticatedUser<User>) -> Result<Response> {
     let stored = resolve::<DatabaseChannel>()?;
 
     let marked = stored.mark_all_read(user.notifiable_type(), &user.notifiable_id()).await?;

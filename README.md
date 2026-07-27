@@ -21,8 +21,8 @@ you want the data to survive — nothing else in the app changes.
 Everything is wired and working: models, repositories, a router with groups and
 named routes, request contracts, a token guard, a policy, an event, a queued
 job, mailables, notifications with an in-app bell menu, relationships with
-eager loading, broadcasting with channel authorisation, Blade-style views, and a
-console command. Delete what you do not need.
+eager loading, broadcasting with channel authorisation, a WebSocket chat room,
+Blade-style views, and a console command. Delete what you do not need.
 
 ```text
 src/
@@ -48,6 +48,7 @@ src/
     seeders.rs        database/seeders
   routes/
     channels.rs       routes/channels.php — who may subscribe to what
+    ws.rs             —                  — WebSocket endpoints, on the same port
     web.rs            routes/web.php
     api.rs            routes/api.php
     console.rs        routes/console.php
@@ -109,8 +110,19 @@ in a second terminal will not see it. Switch the driver to `DatabaseQueue` in
 `app/providers/app_provider.rs` (and merge its migrations) and it will; the
 feature tests drive a worker directly and assert on both channels.
 
+There is a **WebSocket** room on the same port, needing no second process:
+
+```sh
+# any WebSocket client; the token is the one from /login
+websocat -H "authorization: Bearer $TOKEN" ws://localhost:8000/ws/rooms/lobby
+```
+
+Open two and they hear each other. `authorize` runs before the handshake, so a
+connection with no token is refused with a `403` rather than opened and then
+closed.
+
 An event is a fact with no recipient; a notification is a message to a named
-one; a broadcast is a push to whoever is connected. `src/app/notifications/mod.rs`
+one; a broadcast is a push to whoever is connected; a socket is a conversation. `src/app/notifications/mod.rs`
 has the table that tells them apart.
 
 The index returns each post with its **author** and **tags** in three queries,
@@ -147,6 +159,7 @@ things a Laravel developer trips over first.
 | notification | `app/notifications/` | — (constructed where it is sent) |
 | relationship | the model, as a `pub fn` | — (nothing to register) |
 | broadcast channel rule | `routes/channels.rs` | — (the list *is* the registration) |
+| WebSocket endpoint | `routes/ws.rs` | — (the list *is* the registration) |
 | policy | `app/policies/` | — (called from a controller) |
 | command | `app/console/commands/` | `routes/console.rs` |
 | migration | `database/migrations/` | `database/migrations/mod.rs` — append to `all()` |

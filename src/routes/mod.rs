@@ -8,3 +8,4 @@ pub mod api;
 pub mod channels;
 pub mod console;
 pub mod web;
+pub mod ws;
