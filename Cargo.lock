@@ -542,6 +542,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-encoding"
+version = "2.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1781,8 +1787,10 @@ dependencies = [
  "rainier-filesystem",
  "rainier-http",
  "rainier-mail",
+ "rainier-metrics",
  "rainier-middleware",
  "rainier-notify",
+ "rainier-openapi",
  "rainier-orm",
  "rainier-queue",
  "rainier-routing",
@@ -1790,8 +1798,10 @@ dependencies = [
  "rainier-server",
  "rainier-session",
  "rainier-support",
+ "rainier-telemetry",
  "rainier-validation",
  "rainier-view",
+ "rainier-websocket",
  "serde",
  "serde_json",
  "tokio",
@@ -1833,6 +1843,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rainier-metrics"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "rainier-http",
+ "rainier-middleware",
+ "rainier-routing",
+ "rainier-support",
+ "tracing",
+]
+
+[[package]]
 name = "rainier-middleware"
 version = "0.1.0"
 dependencies = [
@@ -1850,6 +1872,19 @@ version = "0.1.0"
 dependencies = [
  "rainier-mail",
  "rainier-support",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "rainier-openapi"
+version = "0.1.0"
+dependencies = [
+ "rainier-http",
+ "rainier-routing",
+ "rainier-support",
+ "rainier-validation",
+ "serde",
  "serde_json",
  "tracing",
 ]
@@ -1925,6 +1960,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -1933,8 +1969,10 @@ dependencies = [
  "rainier-middleware",
  "rainier-routing",
  "rainier-support",
+ "rainier-websocket",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
 ]
 
@@ -1967,6 +2005,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rainier-telemetry"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "rainier-http",
+ "rainier-middleware",
+ "rainier-support",
+ "tracing",
+]
+
+[[package]]
 name = "rainier-validation"
 version = "0.1.0"
 dependencies = [
@@ -1985,6 +2034,19 @@ dependencies = [
  "rainier-support",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rainier-websocket"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "rainier-http",
+ "rainier-support",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2248,7 +2310,7 @@ dependencies = [
  "serde",
  "sqlx",
  "strum",
- "thiserror",
+ "thiserror 2.0.19",
  "tracing",
  "url",
 ]
@@ -2302,7 +2364,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
- "thiserror",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -2522,7 +2584,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "smallvec",
- "thiserror",
+ "thiserror 2.0.19",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2607,7 +2669,7 @@ dependencies = [
  "smallvec",
  "sqlx-core",
  "stringprep",
- "thiserror",
+ "thiserror 2.0.19",
  "tracing",
  "whoami",
 ]
@@ -2646,7 +2708,7 @@ dependencies = [
  "smallvec",
  "sqlx-core",
  "stringprep",
- "thiserror",
+ "thiserror 2.0.19",
  "tracing",
  "whoami",
 ]
@@ -2671,7 +2733,7 @@ dependencies = [
  "serde",
  "serde_urlencoded",
  "sqlx-core",
- "thiserror",
+ "thiserror 2.0.19",
  "tracing",
  "url",
 ]
@@ -2763,11 +2825,31 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "thiserror"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
+dependencies = [
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
 version = "2.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09a43598840e33d5b0331f38c5e30d13bb11c11210a4b58f0d9b18a5a5eefcd9"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 2.0.19",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2851,6 +2933,18 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
+dependencies = [
+ "futures-util",
+ "log",
+ "tokio",
+ "tungstenite",
 ]
 
 [[package]]
@@ -2960,6 +3054,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand",
+ "sha1",
+ "thiserror 1.0.69",
+ "utf-8",
+]
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3025,6 +3137,12 @@ dependencies = [
  "percent-encoding",
  "serde",
 ]
+
+[[package]]
+name = "utf-8"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8_iter"
