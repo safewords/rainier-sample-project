@@ -20,7 +20,8 @@ you want the data to survive — nothing else in the app changes.
 
 Everything is wired and working: models, repositories, a router with groups and
 named routes, request contracts, a token guard, a policy, an event, a queued
-job, mailables, notifications with an in-app bell menu, Blade-style views, and a
+job, mailables, notifications with an in-app bell menu, relationships with
+eager loading, broadcasting with channel authorisation, Blade-style views, and a
 console command. Delete what you do not need.
 
 ```text
@@ -29,7 +30,7 @@ src/
   bootstrap.rs        bootstrap/app.php  — assembles and boots the app
   config/             config/*.php       — one module per concern
   app/
-    models/           app/Models         — User, Post
+    models/           app/Models         — User, Post, Tag, and their relationships
     http/
       kernel.rs       app/Http/Kernel    — global middleware, and the groups
       controllers/    app/Http/Controllers
@@ -46,6 +47,7 @@ src/
     migrations/       database/migrations — one module per migration
     seeders.rs        database/seeders
   routes/
+    channels.rs       routes/channels.php — who may subscribe to what
     web.rs            routes/web.php
     api.rs            routes/api.php
     console.rs        routes/console.php
@@ -108,7 +110,14 @@ in a second terminal will not see it. Switch the driver to `DatabaseQueue` in
 feature tests drive a worker directly and assert on both channels.
 
 An event is a fact with no recipient; a notification is a message to a named
-one. `src/app/notifications/mod.rs` has the table that tells them apart.
+one; a broadcast is a push to whoever is connected. `src/app/notifications/mod.rs`
+has the table that tells them apart.
+
+The index returns each post with its **author** and **tags** in three queries,
+whatever the page size — `Post::author()` is a `belongs_to`, `Post::tags()` a
+`belongs_to_many` through `post_tag`. Publishing also **broadcasts**
+`post.published` on the public `posts` channel; `src/routes/channels.rs` says
+who may subscribe to the private ones.
 
 ## Two things Rust does differently
 
@@ -136,6 +145,8 @@ things a Laravel developer trips over first.
 | job | `app/jobs/` | the `JobRegistry` in `app/providers/app_provider.rs` |
 | mailable | `app/mail/` | — (constructed where it is sent) |
 | notification | `app/notifications/` | — (constructed where it is sent) |
+| relationship | the model, as a `pub fn` | — (nothing to register) |
+| broadcast channel rule | `routes/channels.rs` | — (the list *is* the registration) |
 | policy | `app/policies/` | — (called from a controller) |
 | command | `app/console/commands/` | `routes/console.rs` |
 | migration | `database/migrations/` | `database/migrations/mod.rs` — append to `all()` |
