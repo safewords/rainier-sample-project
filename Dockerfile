@@ -14,10 +14,9 @@
 # --- build -------------------------------------------------------------------
 
 # Pinned, so an image built today and one built in six months are the same
-# image. Not 1.85: that is the framework's floor for its *default* features,
-# and this application enables the SQL executors — whose dependency trees want
-# 1.88 (`home`) and 1.86 (`icu_*`). Enabling a driver raises the floor, and the
-# floor moves whenever a dependency decides it should.
+# image. Above the framework's own 1.88 floor on purpose: enabling a driver
+# raises it — the AWS SDKs want 1.94 — and the floor moves whenever a
+# dependency decides it should.
 FROM rust:1.90-bookworm AS builder
 
 WORKDIR /build
