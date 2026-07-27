@@ -12,7 +12,7 @@
 // crosses a thread.
 #![allow(clippy::await_holding_lock)]
 
-use app::app::models::Post;
+use app::app::models::{Post, Tag, User};
 use app::app::providers::register_user;
 use app::app::repositories::PostRepository;
 use app::{boot, Mode};
@@ -260,7 +260,82 @@ async fn the_index_lists_only_published_posts() {
 
     let body = app.json(app.get("/api/posts")).await;
     assert_eq!(body["total"], 1);
-    assert_eq!(body["data"][0]["title"], "Published");
+    assert_eq!(body["data"][0]["post"]["title"], "Published");
+}
+
+#[tokio::test]
+async fn the_index_loads_the_author_of_every_post_it_returns() {
+    // The `belongs_to`, over a page: one query for every author on it.
+    let app = App::boot().await;
+    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let posts = app.posts();
+
+    for title in ["One", "Two", "Three"] {
+        let mut post = posts.create_unique(Post::draft(title, "body", author.id)).await.unwrap();
+        post.published = true;
+        posts.update(&post).await.unwrap();
+    }
+
+    let body = app.json(app.get("/api/posts")).await;
+
+    assert_eq!(body["total"], 3);
+    for entry in body["data"].as_array().unwrap() {
+        assert_eq!(entry["author"], "Ada");
+    }
+}
+
+#[tokio::test]
+async fn a_post_carries_the_tags_the_pivot_links_to_it() {
+    use rainier_framework::database::{EntityRepository, Relation};
+
+    let app = App::boot().await;
+    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let posts = app.posts();
+
+    let mut post = posts.create_unique(Post::draft("Tagged", "body", author.id)).await.unwrap();
+    post.published = true;
+    posts.update(&post).await.unwrap();
+
+    let tags = app.app.resolve::<EntityRepository<Tag>>().unwrap();
+    let rust = tags.create(Tag::named("Rust")).await.unwrap();
+    let laravel = tags.create(Tag::named("laravel")).await.unwrap();
+
+    let db = app.app.resolve::<rainier_framework::database::Database>().unwrap();
+    for tag in [&rust, &laravel] {
+        db.statement(&format!("INSERT INTO post_tag VALUES ({}, {})", post.id, tag.id))
+            .await
+            .unwrap();
+    }
+
+    let body = app.json(app.get("/api/posts")).await;
+    let names = body["data"][0]["tags"].as_array().unwrap();
+
+    assert_eq!(names.len(), 2);
+    assert!(names.iter().any(|name| name == "rust"), "{names:?}");
+
+    // And the inverse: the same pivot, read from the tag's side.
+    let with_posts = Tag::posts().load(&[rust.clone()], &**posts).await.unwrap();
+    assert_eq!(with_posts.of(&rust).len(), 1);
+    assert_eq!(with_posts.one(&rust).unwrap().slug, "tagged");
+    assert_eq!(Tag::route_key_name(), "name");
+}
+
+#[tokio::test]
+async fn counting_a_relationship_does_not_load_it() {
+    use rainier_framework::database::Relation;
+
+    let app = App::boot().await;
+    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let posts = app.posts();
+
+    for title in ["One", "Two"] {
+        posts.create_unique(Post::draft(title, "body", author.id)).await.unwrap();
+    }
+
+    let counts = User::posts().count(&[author.clone()], &**posts).await.unwrap();
+
+    assert_eq!(counts.of(&author), 2);
+    assert_eq!(counts.total(), 2);
 }
 
 #[tokio::test]

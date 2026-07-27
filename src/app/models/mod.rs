@@ -4,7 +4,9 @@
 //! adding a file and a line.
 
 pub mod post;
+pub mod tag;
 pub mod user;
 
 pub use post::{Post, PostPublished};
+pub use tag::Tag;
 pub use user::User;

@@ -8,16 +8,50 @@ use rainier_framework::auth::AuthenticatedUser;
 use rainier_framework::prelude::*;
 
 use crate::app::http::requests::{ListPostsRequest, StorePostRequest};
-use crate::app::models::{Post, PostPublished, User};
+use crate::app::models::{Post, PostPublished, Tag, User};
 use crate::app::policies::PostPolicy;
-use crate::app::repositories::PostRepository;
+use crate::app::repositories::{PostRepository, UserRepository};
 
-/// `GET /api/posts` — a page of published posts.
+/// `GET /api/posts` — a page of published posts, with their authors and tags.
+///
+/// **Three queries, whatever the page size.** The posts, then one for every
+/// author on the page, then the pivot and the tags. Twenty posts do not become
+/// forty-one queries, and they cannot: a relationship is loaded for the whole
+/// slice at once, so there is no per-post load to accidentally put in the loop
+/// below.
 pub async fn index(Validated(query): Validated<ListPostsRequest>) -> Result<Response> {
     let posts = resolve::<PostRepository>()?;
     let page = posts.published_page(query.page, query.per_page, query.search.as_deref()).await?;
 
-    Ok(Response::json(&page))
+    // `&**`: these repositories are newtypes that `Deref` to an
+    // `EntityRepository`, and it is the inner one that implements the contract
+    // a relationship loads through.
+    let users = resolve::<UserRepository>()?;
+    let tag_rows = resolve::<EntityRepository<Tag>>()?;
+
+    let authors = Post::author().load(&page.data, &**users).await?;
+    let tags = Post::tags().load(&page.data, &*tag_rows).await?;
+
+    let data: Vec<_> = page
+        .data
+        .iter()
+        .map(|post| {
+            serde_json::json!({
+                "post": post,
+                // `None` rather than an error: an author deleted between the
+                // two queries is a race, not a broken response.
+                "author": authors.one(post).map(|user| &user.name),
+                "tags": tags.of(post).iter().map(|tag| &tag.name).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+
+    Ok(Response::json(&serde_json::json!({
+        "data": data,
+        "total": page.total,
+        "current_page": page.current_page,
+        "per_page": page.per_page,
+    })))
 }
 
 /// `GET /api/posts/{post}` — one post, by slug.

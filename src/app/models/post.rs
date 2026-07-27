@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use rainier_framework::prelude::*;
 use serde::Serialize;
 
+use crate::app::models::{Tag, User};
+
 /// A post, owned by a user.
 #[derive(Entity, Clone, Debug, PartialEq, Serialize)]
 #[orm(table = "posts")]
@@ -28,10 +30,10 @@ pub struct Post {
 
     /// Who wrote it.
     ///
-    /// A flat column, not a navigable relationship: the ORM keeps traversal
-    /// explicit because the two sides may live in different backends, and a
-    /// generated `JOIN` would break the moment they did. Traverse it with
-    /// `repository.find_by("author_id", id)`.
+    /// A flat column. The relationship over it is
+    /// [`Post::author`](Post::author), which is a value you **load** rather
+    /// than a property that queries itself — see
+    /// [relationships](rainier_framework::database::relation).
     #[orm(index, references = "users(id)", on_delete = "cascade")]
     pub author_id: u64,
 
@@ -47,6 +49,27 @@ impl Model for Post {
 }
 
 impl Post {
+    /// The author — Eloquent's `belongsTo(User::class)`.
+    ///
+    /// The foreign key is not the convention (`user_id`), so it is named. The
+    /// owner key still defaults to the user's primary key.
+    ///
+    /// ```ignore
+    /// let authors = Post::author().load(&posts, &*users).await?;   // one query
+    /// let name = &authors.one(&post).unwrap().name;
+    /// ```
+    pub fn author() -> BelongsTo<Post, User> {
+        BelongsTo::new().foreign_key("author_id")
+    }
+
+    /// The tags attached to it — Eloquent's `belongsToMany(Tag::class)`.
+    ///
+    /// Through `post_tag(post_id, tag_id)`, which is the conventional name and
+    /// so needs no column configuration.
+    pub fn tags() -> BelongsToMany<Post, Tag> {
+        BelongsToMany::new("post_tag")
+    }
+
     /// A new, unsaved draft. The database assigns the key on insert.
     pub fn draft(title: impl Into<String>, body: impl Into<String>, author_id: u64) -> Self {
         let title = title.into();

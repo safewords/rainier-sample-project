@@ -76,6 +76,19 @@ impl Notifiable for User {
 }
 
 impl User {
+    /// Everything they have written — Eloquent's `hasMany(Post::class)`.
+    ///
+    /// ```ignore
+    /// let posts = User::posts().load(&users, &*post_repo).await?;   // one query
+    /// let counts = User::posts().count(&users, &*post_repo).await?; // withCount
+    /// ```
+    ///
+    /// One call for the whole slice, which is what makes N+1 unrepresentable:
+    /// there is no per-user load to put in a loop.
+    pub fn posts() -> HasMany<User, crate::app::models::Post> {
+        HasMany::new().foreign_key("author_id")
+    }
+
     /// A new, unsaved user. `password` must already be hashed — see
     /// [`crate::app::providers::register_user`].
     pub fn new(name: impl Into<String>, email: impl Into<String>, password: String) -> Self {

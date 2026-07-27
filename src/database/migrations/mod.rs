@@ -13,6 +13,8 @@
 //!   m0003_index_posts_author.rs   raw SQL, with the SQL that undoes it
 //!   m0004_add_post_search.rs      a step that differs per dialect
 //!   m0005_normalise_emails.rs     a data migration that cannot be undone
+//!   m0006_create_tags.rs          another table from a model
+//!   m0007_create_post_tag.rs      a pivot: two keys, no model
 //! ```
 //!
 //! Each module exposes one `pub fn` returning a
@@ -38,6 +40,8 @@ pub mod m0002_create_posts;
 pub mod m0003_index_posts_author;
 pub mod m0004_add_post_search;
 pub mod m0005_normalise_emails;
+pub mod m0006_create_tags;
+pub mod m0007_create_post_tag;
 
 /// Every migration, in order.
 ///
@@ -52,6 +56,8 @@ pub fn all() -> Migrator {
         .add(m0003_index_posts_author::migration())
         .add(m0004_add_post_search::migration())
         .add(m0005_normalise_emails::migration())
+        .add(m0006_create_tags::migration())
+        .add(m0007_create_post_tag::migration())
         // A framework component that needs a table brings its own migration.
         // The notification channel's rows are what the in-app list reads.
         .merge(rainier_framework::notifications::DatabaseChannel::migrations())
@@ -77,6 +83,8 @@ mod tests {
                 "0003_index_posts_author",
                 "0004_add_post_search",
                 "0005_normalise_emails",
+                "0006_create_tags",
+                "0007_create_post_tag",
                 "rainier_notify_0001_notifications",
             ]
         );
@@ -92,6 +100,8 @@ mod tests {
             "m0003_index_posts_author",
             "m0004_add_post_search",
             "m0005_normalise_emails",
+            "m0006_create_tags",
+            "m0007_create_post_tag",
         ];
 
         for (module, name) in modules.iter().zip(all().names()) {

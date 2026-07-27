@@ -9,6 +9,7 @@ use std::sync::Arc;
 use rainier_framework::events::Dispatcher;
 use rainier_framework::prelude::*;
 
+use crate::app::models::Tag;
 use crate::app::repositories::{PostRepository, UserRepository};
 
 /// Binds one repository per model.
@@ -38,6 +39,12 @@ impl ServiceProvider for RepositoryServiceProvider {
         let db = self.database.clone();
         app.singleton(move |_: &Container| Ok(UserRepository::new(db.clone())));
 
+        // Tags need no queries of their own: a relationship loads them, and
+        // `EntityRepository` is already every CRUD method. Wrapping it in a
+        // `TagRepository` that added nothing would be ceremony.
+        let db = self.database.clone();
+        app.singleton(move |_: &Container| Ok(EntityRepository::<Tag>::new(db.clone())));
+
         Ok(())
     }
 }
@@ -45,7 +52,7 @@ impl ServiceProvider for RepositoryServiceProvider {
 /// The `Arc` the container hands back, spelled out because the closures above
 /// are the only place the concrete types appear.
 #[allow(dead_code, reason = "documentation of the bound types")]
-type Bound = (Arc<PostRepository>, Arc<UserRepository>);
+type Bound = (Arc<PostRepository>, Arc<UserRepository>, Arc<EntityRepository<Tag>>);
 
 #[cfg(test)]
 mod tests {
@@ -54,7 +61,7 @@ mod tests {
     use rainier_framework::database::Dialect;
 
     #[test]
-    fn both_repositories_resolve() {
+    fn every_repository_resolves() {
         let (database, _) = fake_database(MemoryConnection::new(Dialect::Sqlite));
 
         let app = Application::new(".");
@@ -63,6 +70,7 @@ mod tests {
 
         assert!(app.resolve::<PostRepository>().is_ok());
         assert!(app.resolve::<UserRepository>().is_ok());
+        assert!(app.resolve::<EntityRepository<Tag>>().is_ok());
     }
 
     #[test]
