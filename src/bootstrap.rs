@@ -90,6 +90,16 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
             if let Err(e) = config::configure(c, &env) {
                 tracing::error!(error = %e, "configuration failed");
             }
+
+            // Said here rather than left to `APP_ENV`, because unset means
+            // **production** — the right default for a deployment and the
+            // wrong one for a test. Several of the framework's boot checks
+            // refuse in production where they would otherwise warn, so a
+            // suite that did not say this would fail to boot on the honest
+            // answer to a question it never meant to ask.
+            if mode == Mode::Testing {
+                let _ = c.set(config::keys::APP_ENV, AppEnv::Testing);
+            }
         })
         .with_sessions(sessions(&env, &database)?)
         .with_views(Arc::new(

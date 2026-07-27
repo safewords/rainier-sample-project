@@ -4,7 +4,8 @@ use rainier_framework::config::{Config, Env};
 use rainier_framework::prelude::*;
 
 use crate::config::keys::{
-    TELEMETRY_ENABLED, TELEMETRY_ENDPOINT, TELEMETRY_SAMPLE_RATIO, TELEMETRY_SERVICE_NAME,
+    LOG_FORMAT, TELEMETRY_ENABLED, TELEMETRY_ENDPOINT, TELEMETRY_SAMPLE_RATIO,
+    TELEMETRY_SERVICE_NAME,
 };
 
 /// Telemetry settings, read by `bootstrap.rs`.
@@ -28,6 +29,12 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     // decision keeps it — a trace sampled in half its services has holes, and
     // a hole is indistinguishable from a call that never happened.
     config.set(TELEMETRY_SAMPLE_RATIO, env.float("OTEL_TRACES_SAMPLER_ARG", 1.0))?;
+
+    // `auto` is JSON in production and staging, pretty everywhere else. The
+    // framework has already read this from `LOG_FORMAT`; it is repeated here
+    // so `config/` answers the question rather than the reader having to know
+    // the framework has a default.
+    config.set(LOG_FORMAT, env.setting("LOG_FORMAT")?)?;
 
     Ok(())
 }
@@ -65,6 +72,26 @@ OTEL_TRACES_SAMPLER_ARG=0.1",
         assert_eq!(config.get(TELEMETRY_ENDPOINT).as_deref(), Some("http://collector:4317"));
         assert_eq!(config.get(TELEMETRY_SERVICE_NAME).as_deref(), Some("posts-api"));
         assert_eq!(config.get(TELEMETRY_SAMPLE_RATIO), Some(0.1));
+    }
+
+    #[test]
+    fn logs_follow_the_environment_unless_told_otherwise() {
+        let config = Config::new();
+        configure(&config, &Env::new()).unwrap();
+        assert_eq!(config.setting(LOG_FORMAT).unwrap(), LogFormat::Auto);
+
+        // Which is what a developer reading production logs by eye sets.
+        let config = Config::new();
+        configure(&config, &Env::parse("LOG_FORMAT=pretty")).unwrap();
+        assert_eq!(config.setting(LOG_FORMAT).unwrap(), LogFormat::Pretty);
+    }
+
+    #[test]
+    fn a_log_format_nobody_can_spell_stops_the_boot() {
+        let err = configure(&Config::new(), &Env::parse("LOG_FORMAT=jsn")).unwrap_err();
+
+        assert!(err.message().contains("LOG_FORMAT"), "{}", err.message());
+        assert!(err.message().contains("`json`"), "{}", err.message());
     }
 
     #[test]

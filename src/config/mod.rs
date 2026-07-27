@@ -14,6 +14,7 @@
 //!   cache.rs      config/cache.php
 //!   mail.rs       config/mail.php
 //!   posts.rs      config/posts.php — an application's own section
+//!   server.rs     —                — the timeout and compression nginx would do
 //!   metrics.rs    —                — Prometheus, off by default
 //!   openapi.rs    —                — the generated API document
 //!   telemetry.rs  —                — OpenTelemetry
@@ -72,6 +73,7 @@ pub mod mail;
 pub mod metrics;
 pub mod openapi;
 pub mod posts;
+pub mod server;
 pub mod session;
 pub mod telemetry;
 
@@ -87,6 +89,7 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     cache::configure(config, env)?;
     mail::configure(config, env)?;
     posts::configure(config, env)?;
+    server::configure(config, env)?;
 
     // Observability: all three off unless a deployment asks.
     metrics::configure(config, env)?;
@@ -131,6 +134,7 @@ mod tests {
             keys::CACHE_DRIVER.path(),
             keys::MAIL_FILE_PATH.path(),
             keys::POSTS_PER_PAGE.path(),
+            keys::SERVER_REQUEST_TIMEOUT_SECS.path(),
             keys::METRICS_ENABLED.path(),
             keys::OPENAPI_ENABLED.path(),
             keys::TELEMETRY_ENABLED.path(),

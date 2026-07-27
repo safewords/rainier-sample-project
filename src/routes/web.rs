@@ -9,6 +9,7 @@ use crate::app::http::kernel;
 pub fn routes(router: &mut Router) {
     router.get("/", home_controller::index).name("home");
     router.get("/health", home_controller::health).name("health");
+    router.get("/health/version", home_controller::version).name("health.version");
 
     // `kernel::web()` is security headers plus the session, so anything in here
     // has `request.session()`. A route outside it does not — which is the

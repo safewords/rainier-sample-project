@@ -177,8 +177,19 @@ cargo test
 real routes, real middleware, real database, real migrations. Only the mail
 transport is a double, so a test can assert on what was sent.
 
-Tests boot an application each and share the process-global facades, so they
-take a lock and run one at a time. Keep that in mind if you add one.
+`TestApp` does the driving, so a test is three lines:
+
+```rust
+let app = App::boot().await;
+
+app.send(app.get("/health")).await.assert_ok().assert_json_path("status", "ok");
+```
+
+Each test gets its own application, and `TestApp` scopes the facades to the
+thread it runs on, so they no longer resolve out of each other's containers.
+The boot itself is still serialised: the bootstrap installs its application
+globally before the providers run, because a provider legitimately reaches for
+a facade while it is being registered.
 
 ## Sessions and encryption
 

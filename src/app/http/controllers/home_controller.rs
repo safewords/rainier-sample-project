@@ -26,6 +26,19 @@ pub async fn health() -> Response {
     Response::json(&serde_json::json!({ "status": "ok" }))
 }
 
+/// `GET /health/version` — which build is actually running.
+///
+/// The first question of every incident, and the usual answer is somebody
+/// reading a deploy pipeline backwards. `build_info!()` expands here, in this
+/// crate, so the name and version are this application's.
+///
+/// The commit is present when the build was told one — `GITHUB_SHA` in CI, or
+/// `GIT_SHA` passed to `docker build` — and absent otherwise, because a commit
+/// inferred from a dirty working tree is worse than no commit.
+pub async fn version() -> Response {
+    Response::json(&build_info!())
+}
+
 /// `GET /visits` — the session, and flash data, in eight lines.
 ///
 /// Behind the `web` group, which includes `session`. On a route outside it

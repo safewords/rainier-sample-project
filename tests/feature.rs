@@ -4,12 +4,29 @@
 //! real middleware, real database, real migrations. Only the mail transport is
 //! a double, and only so a test can assert on what was sent.
 //!
-//! Each test boots its own application, so they must not run concurrently —
-//! the facades are process-global. `SERIAL` enforces that.
+//! ```ignore
+//! let app = App::boot().await;
+//!
+//! app.send(app.get("/health")).await.assert_ok().assert_json_path("status", "ok");
+//! ```
+//!
+//! [`TestApp`] does the driving. What is left here is what is specific to
+//! *this* application: how to boot it, how to log in, and which repositories a
+//! test wants to look at afterwards.
+//!
+//! # Why the boot is still serialised
+//!
+//! `TestApp` scopes the facades to the thread it runs on, so two tests no
+//! longer resolve out of each other's containers. Booting is the exception:
+//! the bootstrap installs its application globally *before* the providers run,
+//! because a provider legitimately reaches for a facade while it is being
+//! registered — so two boots at the same instant can still cross. The lock is
+//! therefore held for the boot and released immediately after, rather than
+//! held for the whole test.
 
-// The serial guard is deliberately held across awaits: that is the point. Safe
-// because `#[tokio::test]` runs on a current-thread runtime, so it never
-// crosses a thread.
+// The boot lock is deliberately held across the boot's awaits: serialising
+// the boot is the whole point of it. Safe because `#[tokio::test]` runs on a
+// current-thread runtime, so the guard never crosses a thread.
 #![allow(clippy::await_holding_lock)]
 
 use app::app::models::{Post, Tag, User};
@@ -17,36 +34,45 @@ use app::app::providers::register_user;
 use app::app::repositories::PostRepository;
 use app::{boot, Mode};
 use rainier_framework::database::Repository;
-use rainier_framework::http::{Method, Request, Response, StatusCode};
+use rainier_framework::http::{Method, Request};
 use rainier_framework::prelude::*;
-use rainier_framework::server::Kernel;
+use rainier_framework::testing::{TestApp, TestResponse};
 use std::sync::Arc;
 
-static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static BOOTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// A booted application plus the helpers a test needs to drive it.
 struct App {
-    app: Arc<Application>,
-    kernel: Arc<Kernel>,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    app: TestApp,
 }
 
 impl App {
     async fn boot() -> Self {
-        let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        let app = boot(Mode::Testing).await.expect("the application should boot");
-        let kernel = app.resolve::<Kernel>().expect("a kernel");
-        Self { app, kernel, _guard: guard }
+        let app = {
+            // Held across the boot only — see the module docs.
+            let _booting = BOOTING.lock().unwrap_or_else(|e| e.into_inner());
+            boot(Mode::Testing).await.expect("the application should boot")
+        };
+
+        Self { app: TestApp::new(app).expect("a kernel") }
     }
 
-    async fn send(&self, request: Request) -> Response {
-        self.kernel.handle_request(request).await
+    /// The container, for resolving something to assert on.
+    fn container(&self) -> &Arc<Application> {
+        self.app.app()
+    }
+
+    /// Resolve a service out of this application.
+    fn resolve<T: Send + Sync + 'static>(&self) -> Result<Arc<T>> {
+        self.app.resolve::<T>()
+    }
+
+    async fn send(&self, request: Request) -> TestResponse {
+        self.app.send(request).await
     }
 
     async fn json(&self, request: Request) -> serde_json::Value {
-        let bytes =
-            self.send(request).await.into_http().into_body().collect().await.expect("a body");
-        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
+        self.send(request).await.json()
     }
 
     fn get(&self, uri: &str) -> Request {
@@ -55,7 +81,7 @@ impl App {
 
     /// Register a user and log in, returning the API token.
     async fn login(&self) -> String {
-        register_user(&self.app, "Ada Lovelace", "ada@example.com", "correct-horse")
+        register_user(self.container(), "Ada Lovelace", "ada@example.com", "correct-horse")
             .await
             .expect("the user should be created");
 
@@ -117,7 +143,31 @@ async fn the_application_boots_and_migrates() {
 async fn the_health_check_responds() {
     let app = App::boot().await;
     let response = app.send(app.get("/health")).await;
-    assert_eq!(response.status(), StatusCode::OK);
+    response.assert_ok();
+}
+
+#[tokio::test]
+async fn the_health_check_says_what_it_is() {
+    let app = App::boot().await;
+
+    app.send(app.get("/health")).await.assert_ok().assert_json_path("status", "ok");
+}
+
+#[tokio::test]
+async fn the_version_endpoint_names_the_build() {
+    // The first question of every incident. `build_info!()` expands in this
+    // application's crate, so the name is this application's.
+    let app = App::boot().await;
+
+    let response = app.send(app.get("/health/version")).await;
+
+    response.assert_ok().assert_json_path("name", "app").assert_json_path("profile", "debug");
+
+    // Absent rather than null when nothing set `GIT_SHA` — which is every
+    // local build, and is the honest answer.
+    if option_env!("GIT_SHA").is_none() && option_env!("GITHUB_SHA").is_none() {
+        response.assert_json_missing("commit");
+    }
 }
 
 #[tokio::test]
@@ -126,7 +176,7 @@ async fn the_home_page_renders_html() {
     let request = Request::builder().method(Method::GET).uri("/").build();
     let response = app.send(request).await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    response.assert_ok();
     assert_eq!(response.header("content-type"), Some("text/html; charset=utf-8"));
 }
 
@@ -142,7 +192,7 @@ async fn logging_in_returns_a_token() {
 async fn a_wrong_password_and_an_unknown_address_look_identical() {
     // So the endpoint does not reveal which addresses are registered.
     let app = App::boot().await;
-    register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
 
     let attempt = |email: &str, password: &str| {
         Request::builder()
@@ -162,7 +212,7 @@ async fn a_wrong_password_and_an_unknown_address_look_identical() {
 #[tokio::test]
 async fn a_guarded_route_refuses_an_anonymous_caller() {
     let app = App::boot().await;
-    assert_eq!(app.send(app.get("/api/me")).await.status(), StatusCode::UNAUTHORIZED);
+    app.send(app.get("/api/me")).await.assert_unauthorized();
 }
 
 #[tokio::test]
@@ -181,14 +231,8 @@ async fn logging_out_revokes_the_token() {
     let app = App::boot().await;
     let token = app.login().await;
 
-    assert_eq!(
-        app.send(app.authed(Method::POST, "/api/logout", &token).build()).await.status(),
-        StatusCode::NO_CONTENT
-    );
-    assert_eq!(
-        app.send(app.authed(Method::GET, "/api/me", &token).build()).await.status(),
-        StatusCode::UNAUTHORIZED
-    );
+    app.send(app.authed(Method::POST, "/api/logout", &token).build()).await.assert_no_content();
+    app.send(app.authed(Method::GET, "/api/me", &token).build()).await.assert_unauthorized();
 }
 
 // --- request contracts ------------------------------------------------------
@@ -254,7 +298,8 @@ async fn global_middleware_trims_input_before_the_contract_sees_it() {
 #[tokio::test]
 async fn the_index_lists_only_published_posts() {
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
     let posts = app.posts();
 
     posts.create_unique(Post::draft("A draft", "body", author.id)).await.unwrap();
@@ -271,7 +316,8 @@ async fn the_index_lists_only_published_posts() {
 async fn the_index_loads_the_author_of_every_post_it_returns() {
     // The `belongs_to`, over a page: one query for every author on it.
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
     let posts = app.posts();
 
     for title in ["One", "Two", "Three"] {
@@ -293,18 +339,19 @@ async fn a_post_carries_the_tags_the_pivot_links_to_it() {
     use rainier_framework::database::{EntityRepository, Relation};
 
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
     let posts = app.posts();
 
     let mut post = posts.create_unique(Post::draft("Tagged", "body", author.id)).await.unwrap();
     post.published = true;
     posts.update(&post).await.unwrap();
 
-    let tags = app.app.resolve::<EntityRepository<Tag>>().unwrap();
+    let tags = app.resolve::<EntityRepository<Tag>>().unwrap();
     let rust = tags.create(Tag::named("Rust")).await.unwrap();
     let laravel = tags.create(Tag::named("laravel")).await.unwrap();
 
-    let db = app.app.resolve::<rainier_framework::database::Database>().unwrap();
+    let db = app.resolve::<rainier_framework::database::Database>().unwrap();
     for tag in [&rust, &laravel] {
         db.statement(&format!("INSERT INTO post_tag VALUES ({}, {})", post.id, tag.id))
             .await
@@ -329,7 +376,8 @@ async fn counting_a_relationship_does_not_load_it() {
     use rainier_framework::database::Relation;
 
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
     let posts = app.posts();
 
     for title in ["One", "Two"] {
@@ -345,16 +393,18 @@ async fn counting_a_relationship_does_not_load_it() {
 #[tokio::test]
 async fn an_unpublished_post_is_a_404_rather_than_a_leak() {
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
     app.posts().create_unique(Post::draft("Secret Draft", "body", author.id)).await.unwrap();
 
-    assert_eq!(app.send(app.get("/api/posts/secret-draft")).await.status(), StatusCode::NOT_FOUND);
+    app.send(app.get("/api/posts/secret-draft")).await.assert_not_found();
 }
 
 #[tokio::test]
 async fn a_slug_collision_gets_a_suffix() {
     let app = App::boot().await;
-    let author = register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
     let posts = app.posts();
 
     let first = posts.create_unique(Post::draft("Same Title", "b", author.id)).await.unwrap();
@@ -367,10 +417,7 @@ async fn a_slug_collision_gets_a_suffix() {
 #[tokio::test]
 async fn a_slug_constraint_rejects_a_non_slug() {
     let app = App::boot().await;
-    assert_eq!(
-        app.send(app.get("/api/posts/not%20a%20slug")).await.status(),
-        StatusCode::NOT_FOUND
-    );
+    app.send(app.get("/api/posts/not%20a%20slug")).await.assert_not_found();
 }
 
 // --- publishing: policies, events, queues, mail -----------------------------
@@ -395,19 +442,19 @@ async fn publishing_queues_a_notification_instead_of_sending_it_inline() {
 
     let response =
         app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
-    assert_eq!(response.status(), StatusCode::OK);
+    response.assert_ok();
 
-    let queue = app.app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
+    let queue = app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
     assert_eq!(queue.queue().size("mail").await.unwrap(), 1);
 }
 
 /// Drain the `mail` queue, as `queue:work` would.
 async fn work_the_mail_queue(app: &App) -> rainier_framework::queue::WorkerStats {
-    let manager = app.app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
+    let manager = app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
     let worker = rainier_framework::queue::Worker::new(
         Arc::clone(manager.queue()),
         Arc::clone(manager.registry()),
-        Arc::clone(app.app.container()),
+        Arc::clone(app.container().container()),
     )
     .with_options(
         rainier_framework::queue::WorkerOptions::default().queues(["mail"]).stop_when_empty(),
@@ -460,7 +507,7 @@ async fn one_notification_reaches_every_channel_it_selected() {
 
     work_the_mail_queue(&app).await;
 
-    let stored = app.app.resolve::<rainier_framework::notifications::DatabaseChannel>().unwrap();
+    let stored = app.resolve::<rainier_framework::notifications::DatabaseChannel>().unwrap();
     let unread = stored.unread("User", "1", 10).await.unwrap();
 
     let emails =
@@ -503,7 +550,7 @@ async fn reading_a_notification_clears_the_badge() {
     let response = app
         .send(app.authed(Method::POST, &format!("/api/notifications/{id}/read"), &token).build())
         .await;
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    response.assert_no_content();
 
     let after = app.json(app.authed(Method::GET, "/api/notifications", &token).build()).await;
     assert_eq!(after["unread"], 0);
@@ -523,7 +570,7 @@ async fn you_cannot_read_someone_elses_notification() {
         .send(app.authed(Method::POST, "/api/notifications/not-yours/read", &token).build())
         .await;
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    response.assert_not_found();
 }
 
 #[tokio::test]
@@ -546,7 +593,7 @@ async fn a_stored_notification_can_be_marked_read() {
     app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
     work_the_mail_queue(&app).await;
 
-    let stored = app.app.resolve::<rainier_framework::notifications::DatabaseChannel>().unwrap();
+    let stored = app.resolve::<rainier_framework::notifications::DatabaseChannel>().unwrap();
     let id = stored.unread("User", "1", 10).await.unwrap()[0].id.clone();
 
     assert!(stored.mark_read(&id).await.unwrap());
@@ -565,7 +612,7 @@ async fn publishing_twice_does_not_queue_a_second_notification() {
         app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
     }
 
-    let queue = app.app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
+    let queue = app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
     assert_eq!(queue.queue().size("mail").await.unwrap(), 1);
 }
 
@@ -614,7 +661,7 @@ async fn the_auth_endpoint_signs_a_channel_you_are_allowed_on() {
     // The grant is the 200. The memory driver signs nothing — there is no
     // relay to convince — so the body is empty; with a Pusher-protocol relay
     // configured it would carry the HMAC.
-    assert_eq!(response.status(), StatusCode::OK);
+    response.assert_ok();
 }
 
 #[tokio::test]
@@ -633,7 +680,7 @@ async fn the_auth_endpoint_refuses_someone_elses_channel() {
         )
         .await;
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    response.assert_forbidden();
 }
 
 #[tokio::test]
@@ -653,7 +700,7 @@ async fn the_auth_endpoint_refuses_a_channel_nobody_declared() {
         )
         .await;
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    response.assert_forbidden();
 }
 
 #[tokio::test]
@@ -670,7 +717,7 @@ async fn the_auth_endpoint_is_behind_the_guard() {
         )
         .await;
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    response.assert_unauthorized();
 }
 
 #[tokio::test]
@@ -678,26 +725,23 @@ async fn the_policy_stops_you_touching_someone_elses_post() {
     let app = App::boot().await;
     let token = app.login().await;
 
-    let other =
-        register_user(&app.app, "Grace", "grace@example.com", "another-password").await.unwrap();
+    let other = register_user(app.container(), "Grace", "grace@example.com", "another-password")
+        .await
+        .unwrap();
     app.posts().create_unique(Post::draft("Not Yours", "body", other.id)).await.unwrap();
 
     for uri in ["/api/posts/not-yours/publish"] {
-        assert_eq!(
-            app.send(app.authed(Method::POST, uri, &token).build()).await.status(),
-            StatusCode::FORBIDDEN
-        );
+        app.send(app.authed(Method::POST, uri, &token).build()).await.assert_forbidden();
     }
-    assert_eq!(
-        app.send(app.authed(Method::DELETE, "/api/posts/not-yours", &token).build()).await.status(),
-        StatusCode::FORBIDDEN
-    );
+    app.send(app.authed(Method::DELETE, "/api/posts/not-yours", &token).build())
+        .await
+        .assert_forbidden();
 }
 
 #[tokio::test]
 async fn registering_sends_a_welcome_email() {
     let app = App::boot().await;
-    register_user(&app.app, "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
 
     let sent = app.mail().sent();
     assert_eq!(sent.len(), 1);
@@ -710,7 +754,7 @@ async fn registering_sends_a_welcome_email() {
 #[tokio::test]
 async fn named_routes_generate_urls() {
     let app = App::boot().await;
-    let urls = app.app.resolve::<rainier_framework::routing::UrlGenerator>().unwrap();
+    let urls = app.resolve::<rainier_framework::routing::UrlGenerator>().unwrap();
 
     assert_eq!(urls.route("api.posts.index", &[]).unwrap(), "/api/posts");
     assert_eq!(urls.route("api.posts.show", &[("post", "hello")]).unwrap(), "/api/posts/hello");
@@ -756,7 +800,7 @@ async fn the_wrong_method_is_a_405_that_says_what_is_allowed() {
     let request = Request::builder().method(Method::DELETE).uri("/login").build();
     let response = app.send(request).await;
 
-    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    response.assert_status(StatusCode::METHOD_NOT_ALLOWED);
     assert!(response.header("allow").unwrap().contains("POST"));
 }
 
@@ -777,18 +821,18 @@ async fn a_browser_gets_html_and_an_api_client_gets_json_for_the_same_error() {
 async fn seeding_is_idempotent() {
     let app = App::boot().await;
 
-    app::database::seeders::seed(&app.app).await.unwrap();
+    app::database::seeders::seed(app.container()).await.unwrap();
     let after_first = app.posts().count().await.unwrap();
     assert!(after_first > 0);
 
-    app::database::seeders::seed(&app.app).await.unwrap();
+    app::database::seeders::seed(app.container()).await.unwrap();
     assert_eq!(app.posts().count().await.unwrap(), after_first, "running twice adds nothing");
 }
 
 // --- sessions and encryption -------------------------------------------------
 
 /// The session cookie a response set, if any.
-fn session_cookie(response: &Response) -> Option<String> {
+fn session_cookie(response: &TestResponse) -> Option<String> {
     response
         .header("set-cookie")?
         .split(';')
@@ -910,7 +954,7 @@ async fn encryption_is_wired_and_round_trips() {
     use rainier_framework::crypt::Encryption;
 
     let app = App::boot().await;
-    let crypt = app.app.resolve::<Encryption>().expect("encryption should be bound");
+    let crypt = app.resolve::<Encryption>().expect("encryption should be bound");
 
     let sealed = crypt.encrypt("a card number").unwrap();
     assert!(!sealed.contains("card"), "{sealed}");
