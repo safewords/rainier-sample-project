@@ -48,6 +48,16 @@ pub fn routes(router: &mut Router) {
                     .where_slug("post");
 
                 // The in-app bell menu — what the database channel wrote.
+                // `Broadcast::routes()`. Behind the guard, because it reads
+                // the authenticated user to decide — without one every private
+                // channel answers 401, which reads as a broken client.
+                router
+                    .post(
+                        "/broadcasting/auth",
+                        rainier_framework::broadcasting::authorize::<crate::app::models::User>,
+                    )
+                    .name("broadcasting.auth");
+
                 router
                     .get("/notifications", notification_controller::index)
                     .name("notifications.index");

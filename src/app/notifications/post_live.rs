@@ -1,5 +1,6 @@
 //! `PostLive` — `app/Notifications/PostLive.php`.
 
+use rainier_framework::broadcasting::BroadcastChannel;
 use rainier_framework::notifications::DatabaseChannel;
 use rainier_framework::notify::MailChannel;
 use rainier_framework::prelude::*;
@@ -30,7 +31,7 @@ impl Notification<User> for PostLive {
     /// unconditional because it needs no address; a real application would ask
     /// the user's preferences here before adding mail.
     fn via(&self, _: &User) -> Channels {
-        Channels::new().with::<DatabaseChannel>().with::<MailChannel>()
+        Channels::new().with::<DatabaseChannel>().with::<BroadcastChannel>().with::<MailChannel>()
     }
 
     /// The email body — the mailable, reused.
@@ -83,7 +84,7 @@ mod tests {
     fn it_goes_out_on_both_channels() {
         assert_eq!(
             PostLive { post: post() }.via(&author()).names(),
-            vec!["DatabaseChannel", "MailChannel"]
+            vec!["DatabaseChannel", "BroadcastChannel", "MailChannel"]
         );
     }
 

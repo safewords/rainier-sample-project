@@ -13,6 +13,8 @@ use std::sync::Arc;
 use rainier_framework::auth::{
     Argon2Hasher, AuthManager, Hasher, RepositoryUserProvider, TokenGuard, UserProvider,
 };
+use rainier_framework::broadcast::{Broadcasting, MemoryBroadcaster};
+use rainier_framework::broadcasting::BroadcastChannel;
 use rainier_framework::database::{EntityRepository, Migrator, Repository};
 use rainier_framework::mail::{
     Address, FileTransport, LogTransport, Mailer, MemoryTransport, Transport,
@@ -44,6 +46,7 @@ impl ServiceProvider for AppServiceProvider {
         self.hashing(app);
         self.authentication(app);
         self.mail(app)?;
+        self.broadcasting(app);
         self.notifications(app);
         self.queue(app);
 
@@ -158,6 +161,30 @@ impl AppServiceProvider {
         Ok(())
     }
 
+    fn broadcasting(&self, app: &Application) {
+        // The channel table. Without one every private channel is denied, so
+        // a missing registration looks like a WebSocket that never connects
+        // rather than like a leak.
+        app.instance(crate::routes::channels::channels());
+
+        match self.mode {
+            // In testing the memory broadcaster is *also* bound on its own, so
+            // a test can resolve it and assert on what was published — the
+            // manager only exposes it as `dyn Broadcaster`.
+            Mode::Testing => {
+                let memory = Arc::new(MemoryBroadcaster::new());
+                app.instance_arc(Arc::clone(&memory));
+                app.instance(Broadcasting::new(memory));
+            }
+            // Otherwise the log, which reaches no browser. Swap in
+            // `RedisBroadcaster::connect(..)` and point soketi at the same
+            // Redis to go live — that one needs to connect, so it belongs in
+            // `Rainier::with_broadcasting(..)` in `bootstrap.rs` rather than
+            // here, where `register` may not await.
+            Mode::Running => app.instance(Broadcasting::log()),
+        }
+    }
+
     fn notifications(&self, app: &Application) {
         // Bound on its own as well as into the notifier: reading the bell menu
         // — `unread`, `mark_read` — is the other half of storing rows, and a
@@ -170,8 +197,13 @@ impl AppServiceProvider {
             // ran a different set would not be testing what production does;
             // what differs is the mail transport underneath, which is already
             // in memory when testing.
+            // Three channels, and each answers a different question. The
+            // database one is what survives a reload; the broadcast one is
+            // what makes the bell move without one; mail is what reaches
+            // someone who has closed the tab.
             Ok(Notifier::new()
                 .with_arc(container.resolve::<DatabaseChannel>()?)
+                .with(BroadcastChannel::new(container.resolve::<Broadcasting>()?))
                 .with(MailChannel::new(container.resolve::<Mailer>()?)))
         });
     }
@@ -208,6 +240,13 @@ impl EventServiceProvider {
         events.listen(|event: Arc<PostPublished>| async move {
             tracing::info!(slug = %event.post.slug, title = %event.post.title, "post published");
             Ok(())
+        });
+
+        // The same fact, pushed to any browser watching. A separate listener
+        // because it is a separate concern, and because a WebSocket relay
+        // being down must not stop the author's notification being queued.
+        events.listen(|event: Arc<PostPublished>| async move {
+            Broadcast::instance().event(event.as_ref()).await
         });
 
         // Telling the author is *a reaction to* the fact, not the fact itself.

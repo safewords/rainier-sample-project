@@ -93,6 +93,10 @@ impl App {
         self.app.resolve::<PostRepository>().expect("a post repository")
     }
 
+    fn broadcasts(&self) -> Arc<rainier_framework::broadcast::MemoryBroadcaster> {
+        self.app.resolve().expect("the testing broadcaster")
+    }
+
     fn mail(&self) -> Arc<rainier_framework::mail::MemoryTransport> {
         self.app
             .resolve::<rainier_framework::mail::MemoryTransport>()
@@ -563,6 +567,110 @@ async fn publishing_twice_does_not_queue_a_second_notification() {
 
     let queue = app.app.resolve::<rainier_framework::queue::QueueManager>().unwrap();
     assert_eq!(queue.queue().size("mail").await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn publishing_broadcasts_the_fact_to_the_public_channel() {
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+
+    app.broadcasts().assert_broadcast("post.published", "posts");
+    let sent = app.broadcasts().sent();
+    assert_eq!(sent[0].payload["slug"], "going-live");
+    assert!(sent[0].payload.get("body").is_none(), "a public channel gets no body");
+}
+
+#[tokio::test]
+async fn a_notification_is_broadcast_to_its_recipients_own_channel() {
+    let app = App::boot().await;
+    let token = app.login().await;
+    create_post(&app, &token, "Going live").await;
+    app.send(app.authed(Method::POST, "/api/posts/going-live/publish", &token).build()).await;
+
+    work_the_mail_queue(&app).await;
+
+    app.broadcasts().assert_broadcast("post.live", "private-notifications.User.1");
+}
+
+#[tokio::test]
+async fn the_auth_endpoint_signs_a_channel_you_are_allowed_on() {
+    let app = App::boot().await;
+    let token = app.login().await;
+
+    let response = app
+        .send(
+            app.authed(Method::POST, "/api/broadcasting/auth", &token)
+                .json(&serde_json::json!({
+                    "socket_id": "1234.5678",
+                    "channel_name": "private-notifications.User.1",
+                }))
+                .build(),
+        )
+        .await;
+
+    // The grant is the 200. The memory driver signs nothing — there is no
+    // relay to convince — so the body is empty; with a Pusher-protocol relay
+    // configured it would carry the HMAC.
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn the_auth_endpoint_refuses_someone_elses_channel() {
+    let app = App::boot().await;
+    let token = app.login().await;
+
+    let response = app
+        .send(
+            app.authed(Method::POST, "/api/broadcasting/auth", &token)
+                .json(&serde_json::json!({
+                    "socket_id": "1234.5678",
+                    "channel_name": "private-notifications.User.999",
+                }))
+                .build(),
+        )
+        .await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn the_auth_endpoint_refuses_a_channel_nobody_declared() {
+    // Failing closed: a pattern that does not exist is denied, not allowed.
+    let app = App::boot().await;
+    let token = app.login().await;
+
+    let response = app
+        .send(
+            app.authed(Method::POST, "/api/broadcasting/auth", &token)
+                .json(&serde_json::json!({
+                    "socket_id": "1234.5678",
+                    "channel_name": "private-payroll.1",
+                }))
+                .build(),
+        )
+        .await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn the_auth_endpoint_is_behind_the_guard() {
+    let app = App::boot().await;
+
+    let response = app
+        .send(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/broadcasting/auth")
+                .json(&serde_json::json!({ "socket_id": "1.1", "channel_name": "private-x.1" }))
+                .build(),
+        )
+        .await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

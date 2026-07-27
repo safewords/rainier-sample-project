@@ -5,5 +5,6 @@
 //! CORS and rate limiting, and `console` is not routing at all.
 
 pub mod api;
+pub mod channels;
 pub mod console;
 pub mod web;

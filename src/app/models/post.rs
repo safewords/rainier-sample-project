@@ -94,10 +94,46 @@ impl Post {
 ///
 /// Listeners react without the controller knowing they exist — see
 /// [`crate::app::providers::EventServiceProvider`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PostPublished {
     /// The post that went live.
     pub post: Post,
+}
+
+/// The same fact, pushed to any browser watching — Laravel's `ShouldBroadcast`.
+///
+/// One type, dispatched in-process *and* broadcast. Nothing is discovered
+/// though: implementing this makes it broadcast**able**, and a listener in
+/// [`EventServiceProvider`](crate::app::providers::EventServiceProvider) still
+/// has to broadcast it.
+impl Broadcastable for PostPublished {
+    /// A public channel, because a published post is public.
+    ///
+    /// The author's own view of it is `private-posts.{slug}`, declared in
+    /// `routes/channels.rs` — a private channel for the same subject, gated by
+    /// the policy.
+    fn broadcast_on(&self) -> Vec<BroadcastChannelName> {
+        vec![BroadcastChannelName::public("posts")]
+    }
+
+    /// Pinned, because a JavaScript client listens for this string. Renaming
+    /// the struct would otherwise rename the event and the listener would go
+    /// quiet rather than error.
+    fn broadcast_as(&self) -> String {
+        "post.published".into()
+    }
+
+    /// **Not** the whole post.
+    ///
+    /// The default would serialise every field, body included, to anyone
+    /// subscribed to a public channel. A broadcast payload is a notification
+    /// that something changed; the client fetches what it needs.
+    fn broadcast_with(&self) -> Result<serde_json::Value> {
+        Ok(serde_json::json!({
+            "slug": self.post.slug,
+            "title": self.post.title,
+        }))
+    }
 }
 
 #[cfg(test)]
