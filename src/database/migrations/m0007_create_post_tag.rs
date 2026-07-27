@@ -1,63 +1,67 @@
-//! `0007_create_post_tag` — the pivot behind `Post::tags`.
+//! `0007_create_post_tag` — the pivot behind `Post::tags`, from a blueprint.
 
 use rainier_framework::database::Step;
 
 /// Create `post_tag`.
 ///
-/// Written as raw SQL rather than as an entity, because a pivot is two foreign
-/// keys and no model — nothing reads a row of it on its own, and
-/// [`BelongsToMany`](rainier_framework::database::BelongsToMany) fetches it as
-/// two columns.
+/// A table no model describes — a pivot is two foreign keys and nothing else —
+/// so it is built rather than derived from an
+/// [`Entity`](rainier_framework::database::Entity). What it is *not* is three
+/// hand-written `CREATE TABLE` statements, one per engine.
 ///
-/// Three things worth having, none of which come for free:
+/// Three things worth having, and none of them are automatic:
 ///
 /// - a **composite primary key**, so the same tag cannot be attached twice —
 ///   otherwise a double-click puts two links in and the tag appears twice;
-/// - `ON DELETE CASCADE`, so deleting a post takes its links with it rather
-///   than leaving rows pointing at nothing;
-/// - an index on `tag_id`, because the pivot is read from **both** directions
-///   and the primary key only helps the one that leads with `post_id`.
+/// - **cascades**, so deleting a post takes its links rather than leaving rows
+///   pointing at nothing;
+/// - an **index on `tag_id`** — `foreign_id` adds one to each side, which
+///   matters because the pivot is read from both directions and a composite
+///   primary key only helps the direction that leads with `post_id`.
 pub fn migration() -> Step {
-    Step::raw(
-        "0007_create_post_tag",
-        vec![
-            "CREATE TABLE IF NOT EXISTS post_tag (\
-                 post_id BIGINT NOT NULL, \
-                 tag_id BIGINT NOT NULL, \
-                 PRIMARY KEY (post_id, tag_id), \
-                 FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE, \
-                 FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE\
-             )"
-            .into(),
-            "CREATE INDEX IF NOT EXISTS idx_post_tag_tag ON post_tag (tag_id)".into(),
-        ],
-        vec![
-            "DROP INDEX IF EXISTS idx_post_tag_tag".into(),
-            "DROP TABLE IF EXISTS post_tag".into(),
-        ],
-    )
+    Step::create("0007_create_post_tag", "post_tag", |table| {
+        table.foreign_id("post_id").constrained_on("posts").cascade_on_delete();
+        table.foreign_id("tag_id").constrained_on("tags").cascade_on_delete();
+
+        table.primary(["post_id", "tag_id"]);
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rainier_framework::database::{Dialect, Down, Migration};
+    use rainier_framework::database::{Dialect, Migration};
 
     #[test]
-    fn the_pair_is_the_primary_key() {
+    fn the_pair_is_the_key_on_every_engine() {
         // What stops the same tag being attached to the same post twice.
-        let up = migration().up(Dialect::Sqlite).join("\n");
-        assert!(up.contains("PRIMARY KEY (post_id, tag_id)"), "{up}");
+        for dialect in [Dialect::Sqlite, Dialect::MySql, Dialect::Postgres] {
+            let up = migration().up(dialect).join("\n");
+
+            assert_eq!(up.matches("PRIMARY KEY").count(), 1, "{dialect:?}: {up}");
+            assert!(up.contains("post_id"), "{dialect:?}: {up}");
+            assert!(up.contains("tag_id"), "{dialect:?}: {up}");
+        }
     }
 
     #[test]
-    fn the_index_is_dropped_before_the_table_it_is_on() {
-        let Down::Statements(down) = migration().down(Dialect::Sqlite) else {
-            panic!("a pivot is reversible");
-        };
+    fn deleting_a_post_takes_its_links() {
+        let up = migration().up(Dialect::Sqlite).join("\n");
+        assert_eq!(up.matches("ON DELETE CASCADE").count(), 2, "{up}");
+    }
 
-        let index = down.iter().position(|s| s.contains("INDEX")).expect("drops the index");
-        let table = down.iter().position(|s| s.contains("TABLE")).expect("drops the table");
-        assert!(index < table, "{down:?}");
+    #[test]
+    fn both_directions_are_indexed() {
+        // The pivot is read from the post's side *and* the tag's.
+        let up = migration().up(Dialect::Sqlite).join("\n");
+
+        assert!(up.contains("post_tag_post_id_index"), "{up}");
+        assert!(up.contains("post_tag_tag_id_index"), "{up}");
+    }
+
+    #[test]
+    fn the_rollback_drops_the_table() {
+        let down = migration().down(Dialect::Sqlite).sql("x").expect("reversible").join("\n");
+        assert_eq!(down, "DROP TABLE IF EXISTS \"post_tag\"");
     }
 }

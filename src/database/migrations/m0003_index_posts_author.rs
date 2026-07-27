@@ -1,47 +1,55 @@
-//! `0003_index_posts_author` — raw SQL, and the SQL that undoes it.
+//! `0003_index_posts_author` — an index, described once.
 
 use rainier_framework::database::Step;
 
 /// Index `posts.author_id`.
 ///
-/// `raw` runs the same statements on every backend, which is right when the SQL
-/// genuinely is the same. You write both directions; there is no `down` to
-/// forget, because the contract has no default for it.
+/// Nothing here is SQL. The three engines disagree about this exact statement
+/// — SQLite and Postgres accept `CREATE INDEX IF NOT EXISTS`, MySQL rejects it
+/// — and translating that is the builder's job, not yours.
 ///
-/// Note `IF NOT EXISTS` on the way up and `IF EXISTS` on the way down. Neither
-/// is required — a migration runs at most once — but both make the step safe to
-/// re-run by hand against a database somebody has already touched, which is the
-/// situation you are in when you are reaching for this at all.
+/// The `down` is derived: an index that was created is an index that gets
+/// dropped, and `DROP INDEX name` on SQLite and Postgres is
+/// `DROP INDEX name ON table` on MySQL. Also not yours.
 pub fn migration() -> Step {
-    Step::raw(
-        "0003_index_posts_author",
-        vec!["CREATE INDEX IF NOT EXISTS idx_posts_author ON posts (author_id)".into()],
-        vec!["DROP INDEX IF EXISTS idx_posts_author".into()],
-    )
+    Step::table("0003_index_posts_author", "posts", |table| {
+        table.index(["author_id"]);
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rainier_framework::database::{Dialect, Down, Migration};
+    use rainier_framework::database::{Dialect, Migration};
 
     #[test]
-    fn the_two_directions_name_the_same_index() {
-        // The mistake this catches: renaming the index in `up` and not in
-        // `down`, which leaves a rollback silently dropping nothing.
-        let up = migration().up(Dialect::Sqlite).join("\n");
-        let Down::Statements(down) = migration().down(Dialect::Sqlite) else {
-            panic!("an index is reversible");
-        };
+    fn each_engine_gets_the_statement_it_accepts() {
+        let sqlite = migration().up(Dialect::Sqlite).join("\n");
+        let mysql = migration().up(Dialect::MySql).join("\n");
 
-        assert!(up.contains("idx_posts_author"), "{up}");
-        assert!(down.join("\n").contains("idx_posts_author"), "{down:?}");
+        assert!(sqlite.contains("IF NOT EXISTS"), "{sqlite}");
+        assert!(!mysql.contains("IF NOT EXISTS"), "MySQL rejects it: {mysql}");
     }
 
     #[test]
-    fn it_runs_the_same_sql_on_every_backend() {
-        for dialect in [Dialect::Sqlite, Dialect::Postgres, Dialect::MySql] {
-            assert_eq!(migration().up(dialect), migration().up(Dialect::Sqlite));
+    fn the_rollback_drops_what_the_migration_made() {
+        // Derived from the change, so it cannot name a different index than
+        // the one that was created — the mistake a hand-written `down` makes.
+        for dialect in [Dialect::Sqlite, Dialect::MySql, Dialect::Postgres] {
+            let down = migration()
+                .down(dialect)
+                .sql("0003_index_posts_author")
+                .expect("reversible")
+                .join("\n");
+
+            assert!(down.contains("posts_author_id_index"), "{dialect:?}: {down}");
         }
+    }
+
+    #[test]
+    fn mysql_needs_the_table_named_when_dropping_an_index() {
+        let down = migration().down(Dialect::MySql).sql("x").expect("reversible").join("\n");
+
+        assert!(down.contains("ON `posts`"), "{down}");
     }
 }

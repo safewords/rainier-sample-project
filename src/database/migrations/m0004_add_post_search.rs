@@ -1,12 +1,22 @@
-//! `0004_add_post_search` — a step whose SQL differs per backend.
+//! `0004_add_post_search` — the exception: SQL that genuinely differs per
+//! backend.
 
 use rainier_framework::database::{Dialect, Down, Step};
 
 /// Full-text search over posts, however this backend spells it.
 ///
-/// The case `raw` cannot cover: Postgres wants a GIN index over a `tsvector`,
-/// SQLite wants an FTS5 virtual table, and MySQL wants a `FULLTEXT` index.
-/// `step` takes a closure for each direction and renders per dialect.
+/// **The last resort, and the only migration here that writes SQL.** Every
+/// other one in this directory describes what it wants and lets the builder
+/// render it — see `m0003` for an index, `m0007` for a table, `m0008` for an
+/// alter. If you are writing SQL, check first that
+/// [`Step::create`](rainier_framework::database::Step::create) or
+/// [`Step::table`](rainier_framework::database::Step::table) cannot say it.
+///
+/// This one they cannot. Full-text search is not one feature spelled three
+/// ways — it is three different features: Postgres wants a GIN index over a
+/// `tsvector`, SQLite wants an FTS5 **virtual table**, and MySQL wants a
+/// `FULLTEXT` index. There is no portable form to translate to, so the
+/// migration takes a closure per direction and answers per dialect.
 ///
 /// Both matches are **exhaustive** — no `_` arm. That is deliberate: a dialect
 /// added to the framework should make this a compile error here, because a
