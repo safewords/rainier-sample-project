@@ -314,7 +314,7 @@ async fn a_post_carries_the_tags_the_pivot_links_to_it() {
     assert!(names.iter().any(|name| name == "rust"), "{names:?}");
 
     // And the inverse: the same pivot, read from the tag's side.
-    let with_posts = Tag::posts().load(&[rust.clone()], &**posts).await.unwrap();
+    let with_posts = Tag::posts().load(std::slice::from_ref(&rust), &**posts).await.unwrap();
     assert_eq!(with_posts.of(&rust).len(), 1);
     assert_eq!(with_posts.one(&rust).unwrap().slug, "tagged");
     assert_eq!(Tag::route_key_name(), "name");
@@ -332,7 +332,7 @@ async fn counting_a_relationship_does_not_load_it() {
         posts.create_unique(Post::draft(title, "body", author.id)).await.unwrap();
     }
 
-    let counts = User::posts().count(&[author.clone()], &**posts).await.unwrap();
+    let counts = User::posts().count(std::slice::from_ref(&author), &**posts).await.unwrap();
 
     assert_eq!(counts.of(&author), 2);
     assert_eq!(counts.total(), 2);
