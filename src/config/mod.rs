@@ -14,6 +14,9 @@
 //!   cache.rs      config/cache.php
 //!   mail.rs       config/mail.php
 //!   posts.rs      config/posts.php — an application's own section
+//!   metrics.rs    —                — Prometheus, off by default
+//!   openapi.rs    —                — the generated API document
+//!   telemetry.rs  —                — OpenTelemetry
 //! ```
 //!
 //! Read any of it back with the `Config` facade:
@@ -66,8 +69,11 @@ pub mod app;
 pub mod cache;
 pub mod keys;
 pub mod mail;
+pub mod metrics;
+pub mod openapi;
 pub mod posts;
 pub mod session;
+pub mod telemetry;
 
 /// Apply every configuration section.
 ///
@@ -81,6 +87,11 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     cache::configure(config, env)?;
     mail::configure(config, env)?;
     posts::configure(config, env)?;
+
+    // Observability: all three off unless a deployment asks.
+    metrics::configure(config, env)?;
+    openapi::configure(config, env)?;
+    telemetry::configure(config, env)?;
     Ok(())
 }
 
@@ -120,6 +131,9 @@ mod tests {
             keys::CACHE_DRIVER.path(),
             keys::MAIL_FILE_PATH.path(),
             keys::POSTS_PER_PAGE.path(),
+            keys::METRICS_ENABLED.path(),
+            keys::OPENAPI_ENABLED.path(),
+            keys::TELEMETRY_ENABLED.path(),
         ] {
             assert!(config.has(key), "`{key}` was not set — is its section wired into configure?");
         }

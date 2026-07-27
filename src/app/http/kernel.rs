@@ -27,8 +27,13 @@
 //! container — is `MiddlewareStack::resolved`, which runs when the router
 //! compiles. See [`auth`].
 
+use std::sync::Arc;
+
 use rainier_framework::auth::Authenticate;
 use rainier_framework::groups;
+use rainier_framework::metrics::{Metrics, RecordMetrics};
+use rainier_framework::telemetry::Trace;
+
 use rainier_framework::middleware::{
     AddHeaders, ConvertEmptyStringsToNull, HandleCors, MiddlewareRegistry, MiddlewareStack,
     ThrottleRequests, TrimStrings,
@@ -41,8 +46,16 @@ use crate::app::models::User;
 ///
 /// The framework has already registered its own (`TrimStrings` and
 /// `ConvertEmptyStringsToNull`), so this adds what is ours.
-pub fn register(registry: &MiddlewareRegistry) {
-    // Stamped first so every log line and every error response can carry it.
+pub fn register(registry: &MiddlewareRegistry, trace: Option<Trace>) {
+    // Outermost, when it is on at all: everything logged while handling the
+    // request — including by the middleware below, and by one that rejects it
+    // — carries the trace id. A trace registered after something else would
+    // miss exactly the lines you go looking for.
+    if let Some(trace) = trace {
+        registry.global(trace);
+    }
+
+    // Stamped next so every log line and every error response can carry it.
     registry.global(RequestIdMiddleware::new());
 
     // Re-stated rather than assumed: these two are the reason an unfilled text
@@ -74,8 +87,19 @@ pub fn web() -> MiddlewareStack {
 ///
 /// A session row and a `Set-Cookie` per call would be pure overhead for a
 /// client that authenticates with a token on every request.
-pub fn api() -> MiddlewareStack {
-    MiddlewareStack::new()
+pub fn api(metrics: Option<Arc<Metrics>>) -> MiddlewareStack {
+    let stack = MiddlewareStack::new();
+
+    // Here rather than in the global stack, and that is not a detail: the
+    // router attaches the matched route just before a route's own pipeline
+    // runs, so a group-level middleware can label a series `/posts/{post}`
+    // and a global one can only say `<unmatched>`.
+    let stack = match metrics {
+        Some(metrics) => stack.with(RecordMetrics::new(metrics)),
+        None => stack,
+    };
+
+    stack
         .with(HandleCors::any_origin().allow_headers([
             "content-type",
             "authorization",
@@ -88,8 +112,8 @@ pub fn api() -> MiddlewareStack {
 ///
 /// A group built from another group — the composition Laravel spells by
 /// listing `'api'` inside another array, except this one is checked.
-pub fn api_authenticated() -> MiddlewareStack {
-    api().with_stack(auth("api"))
+pub fn api_authenticated(metrics: Option<Arc<Metrics>>) -> MiddlewareStack {
+    api(metrics).with_stack(auth("api"))
 }
 
 /// Require an authenticated user, through the named guard.
@@ -132,14 +156,37 @@ mod tests {
 
     #[test]
     fn the_api_group_has_no_session() {
-        assert!(!api().labels().contains(&"StartSession"));
-        assert_eq!(api().labels(), vec!["HandleCors", "ThrottleRequests"]);
+        assert!(!api(None).labels().contains(&"StartSession"));
+        assert_eq!(api(None).labels(), vec!["HandleCors", "ThrottleRequests"]);
+    }
+
+    #[test]
+    fn metrics_are_only_in_the_stack_when_they_are_configured_on() {
+        // An application that does not scrape should not be timing every
+        // request, so the middleware is absent rather than recording into a
+        // registry nobody reads.
+        assert!(!api(None).labels().contains(&"RecordMetrics"));
+
+        let metrics = Some(Arc::new(Metrics::new()));
+        assert!(api(metrics).labels().contains(&"RecordMetrics"));
+    }
+
+    #[test]
+    fn metrics_come_before_anything_that_can_short_circuit() {
+        // The rate limiter can answer 429 without calling `next`. Timing it
+        // from outside is the only way that request is counted at all.
+        let labels = api(Some(Arc::new(Metrics::new()))).labels();
+
+        let metrics = labels.iter().position(|l| *l == "RecordMetrics").expect("present");
+        let throttle = labels.iter().position(|l| *l == "ThrottleRequests").expect("present");
+
+        assert!(metrics < throttle, "{labels:?}");
     }
 
     #[test]
     fn the_authenticated_api_is_the_api_plus_a_guard() {
         assert_eq!(
-            api_authenticated().labels(),
+            api_authenticated(None).labels(),
             vec!["HandleCors", "ThrottleRequests", "Authenticate"],
             "composition, not a second list to keep in step"
         );
@@ -156,7 +203,7 @@ mod tests {
     fn the_global_stack_is_stamped_with_a_request_id_first() {
         // The order matters: everything after it can log the id.
         let registry = MiddlewareRegistry::new();
-        register(&registry);
+        register(&registry, None);
 
         // `RequestId` rather than `RequestIdMiddleware`: the middleware
         // overrides `name()`, and the label is what `route:list` prints.

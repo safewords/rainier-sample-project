@@ -7,10 +7,12 @@
 use std::sync::Arc;
 
 use rainier_framework::cache::{Cache, MemoryCache};
+use rainier_framework::config::Config;
 use rainier_framework::config::Env;
 use rainier_framework::crypt::{Encryption, Key, KeyRing};
 use rainier_framework::database::Database;
 use rainier_framework::http::SameSite;
+use rainier_framework::observability::{MetricsSettings, OpenApiSettings, TelemetrySettings};
 use rainier_framework::prelude::*;
 use rainier_framework::session::{
     CacheSessionStore, CookieSessionStore, DatabaseSessionStore, MemorySessionStore, SessionConfig,
@@ -45,6 +47,29 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
     // wants to push into a room.
     let rooms = Arc::new(rainier_framework::websocket::Rooms::new());
 
+    // Observability is read from `config/` before the builder runs, because
+    // whether metrics exist decides whether the middleware is installed — and
+    // middleware is declared, not added later.
+    let settings = Config::new();
+    config::configure(&settings, &env)?;
+
+    let metrics = MetricsSettings::from_config(&settings);
+    let telemetry = TelemetrySettings::from_config(&settings);
+    let api_docs = OpenApiSettings::from_config(&settings);
+
+    if telemetry.exports() {
+        // Configured to export, and this build cannot. Saying so beats a
+        // deployment that believes it is sending spans to a collector that
+        // never hears from it.
+        tracing::warn!(
+            endpoint = telemetry.endpoint.as_deref().unwrap_or_default(),
+            "an OTLP endpoint is configured but this binary was built without the `otlp` \
+             feature; traces are propagated but not exported"
+        );
+    }
+
+    let registry = metrics.registry();
+
     let mut builder = Rainier::new(".");
     if mode == Mode::Testing {
         // A test suite boots an application per test; installing a global
@@ -52,7 +77,13 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         builder = builder.without_tracing();
     }
 
-    builder
+    // Bound only when metrics are on, so `/metrics` answers 404 rather than an
+    // empty scrape that looks like an idle application.
+    if let Some(metrics) = registry.clone() {
+        builder = builder.with_instance_arc(metrics);
+    }
+
+    let app = builder
         .configure(|c| {
             // The builder has already read `.env`; this layers the
             // application's own sections over the framework's defaults.
@@ -81,16 +112,31 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         .with_websockets(routes::ws::routes(Arc::clone(&rooms)))
         .with_instance_arc(rooms)
         .with_schedule(routes::console::schedule)
-        .with_middleware(kernel::register)
+        .with_middleware({
+            let trace = telemetry.middleware();
+            move |registry| kernel::register(registry, trace)
+        })
         .with_events(EventServiceProvider::register_listeners)
         .with_routes(|router| {
             // Web first, so `/` is matched before any catch-all the API adds.
             // Routes are tried in declaration order and the first match wins.
             routes::web::routes(router);
-            routes::api::routes(router);
+            routes::api::routes(router, registry.clone());
         })
         .boot()
-        .await
+        .await?;
+
+    // The document needs the *compiled* router, which only exists once the
+    // application has booted — so it is rendered here and bound, rather than
+    // handed to the builder.
+    if api_docs.enabled {
+        let router = app.resolve::<rainier_framework::routing::CompiledRouter>()?;
+        if let Some(rendered) = api_docs.render(routes::openapi::document(), &router) {
+            app.instance_arc(rendered);
+        }
+    }
+
+    Ok(app)
 }
 
 /// Build the session store from `config/session.rs`.
@@ -259,11 +305,13 @@ async fn connect(mode: Mode) -> Result<Database> {
     let url = rainier_framework::config::Env::load_or_default(".env")
         .string("DATABASE_URL", "sqlite::memory:");
 
-    // An in-memory SQLite database exists only as long as its connection, so
-    // a pool of five would produce five empty databases. The serverless preset
-    // is `max = 1`, which keeps exactly one.
+    // An in-memory SQLite database exists only as long as the connection
+    // holding it, so the pool must keep exactly one **and never reap it**.
+    // `serverless()` is a pool of one and looks right, but it closes an idle
+    // connection after two seconds — which migrates cleanly at boot and then
+    // answers `no such table` to the first request a human makes.
     let pool = if url.starts_with("sqlite::memory:") || mode == Mode::Testing {
-        PoolConfig::serverless()
+        PoolConfig::in_memory()
     } else {
         PoolConfig::default()
     };

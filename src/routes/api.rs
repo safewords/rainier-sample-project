@@ -6,16 +6,42 @@
 //! Route names get the `api.` prefix from the group, so the URL generator
 //! resolves `api.posts.show`.
 
+use std::sync::Arc;
+
+use rainier_framework::metrics::Metrics;
 use rainier_framework::prelude::*;
 
 use crate::app::http::controllers::{auth_controller, notification_controller, post_controller};
 use crate::app::http::kernel;
 
 /// Declare the API routes.
-pub fn routes(router: &mut Router) {
+///
+/// `metrics` is threaded in rather than resolved, because middleware is
+/// **declared**: the group is built once, at boot, and cannot reach into the
+/// container per request to find out whether it should be timing anything.
+pub fn routes(router: &mut Router, metrics: Option<Arc<Metrics>>) {
     router.group(
-        GroupAttributes::new().prefix("api").name("api.").middleware(kernel::api()),
+        GroupAttributes::new().prefix("api").name("api.").middleware(kernel::api(metrics)),
         |router| {
+            // --- observability --------------------------------------------
+            //
+            // Both answer `404` when their feature is off, so a deployment
+            // that has not turned them on looks like one that has no such
+            // endpoint — rather than one serving an empty document, or an
+            // empty scrape that reads as an idle application.
+            //
+            // Neither is behind the guard here, which is a **sample's**
+            // choice: a scrape endpoint tells a reader your traffic shape and
+            // every route you serve, so a real deployment puts it behind
+            // whatever its admin routes are behind, or binds it to an
+            // interface only the scraper can reach.
+            router
+                .get("/metrics", rainier_framework::observability::metrics_endpoint)
+                .name("metrics");
+            router
+                .get("/openapi.json", rainier_framework::observability::openapi_endpoint)
+                .name("openapi");
+
             // --- public ---------------------------------------------------
             router.get("/posts", post_controller::index).name("posts.index");
             router

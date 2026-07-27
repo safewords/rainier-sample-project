@@ -7,5 +7,6 @@
 pub mod api;
 pub mod channels;
 pub mod console;
+pub mod openapi;
 pub mod web;
 pub mod ws;
