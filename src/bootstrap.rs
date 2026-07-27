@@ -282,6 +282,20 @@ fn cache(env: &Env) -> Result<Arc<dyn Cache>> {
         CacheDriver::DynamoDb => Err(Error::internal(
             "CACHE_DRIVER=dynamodb is not wired up in this application; see `bootstrap::cache`",
         )),
+
+        // Workers KV needs either a Worker binding or REST credentials, and
+        // neither is something this application has. Worth knowing before
+        // reaching for it anyway: KV is eventually consistent and has no
+        // compare-and-set, so it cannot back the session store or the
+        // scheduler's locks — both of which this application uses.
+        //
+        // This arm is why the `DynamoDb` one above is spelled out rather than
+        // written as `_`: the framework added a driver in 1.1.0, and the
+        // compiler said so here instead of the new variant silently falling
+        // into a catch-all.
+        CacheDriver::Kv => Err(Error::internal(
+            "CACHE_DRIVER=kv is not wired up in this application; see `bootstrap::cache`",
+        )),
     }
 }
 
