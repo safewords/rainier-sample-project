@@ -340,9 +340,13 @@ the dependency.
 the framework is a git dependency with no version to pin against, so `main`
 moving changes this build with no commit here to trigger it.
 
+The fmt and clippy gates also run as a committed pre-commit hook — enable it
+once per clone with `git config core.hooksPath .githooks`. Bypass once with
+`--no-verify`, or skip only the lint with `SKIP_CLIPPY=1 git commit …`.
+
 | Job | Checks |
 |---|---|
-| `check` | `cargo fmt --check`, `cargo clippy -D warnings` |
+| `check` | `cargo fmt` (self-healing on `main`), `cargo clippy -D warnings` |
 | `test` | the suite under each of the four feature combinations |
 | `migrations` | migrate → rollback → migrate, against a real SQLite file |
 | `routes` | `route:list`, which compiles the router and builds every middleware |
