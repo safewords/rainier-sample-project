@@ -1,14 +1,24 @@
 //! `config/app.php`.
 
 use rainier_framework::config::{Config, Env};
+use rainier_framework::crypt::CryptScheme;
 use rainier_framework::prelude::*;
 
-use crate::config::keys::{APP_ENV, APP_LOCALE, APP_NAME};
+use crate::config::keys::{APP_CIPHER, APP_ENV, APP_LOCALE, APP_NAME};
 
 /// Application-wide settings.
 pub fn configure(config: &Config, env: &Env) -> Result<()> {
     config.set(APP_NAME, env.string("APP_NAME", "Rainier Sample"))?;
     config.set(APP_LOCALE, env.string("APP_LOCALE", "en"))?;
+
+    // Which encryption envelope `Crypt` writes. `native` unless this
+    // application inherits a database a PHP application filled — `php` is a
+    // migration position, not a destination, and the closed set means a
+    // misspelling stops the boot rather than writing rows nothing can read.
+    config.set(
+        APP_CIPHER,
+        env.setting_or("APP_CIPHER", CryptScheme::Native)?,
+    )?;
 
     // `APP_ENV` is already parsed into an `AppEnv` by the framework. Reading it
     // back as the enum is what lets the rest of the application ask a question

@@ -20,11 +20,12 @@ pub async fn register_user(
     email: &str,
     password: &str,
 ) -> rainier_framework::support::Result<crate::app::models::User> {
-    use rainier_framework::auth::{Argon2Hasher, Hasher};
+    use rainier_framework::auth::Hasher;
+    use rainier_framework::crypt::hash::HashManager;
     use rainier_framework::database::Repository;
 
     let users = app.resolve::<crate::app::repositories::UserRepository>()?;
-    let hasher = app.resolve::<Argon2Hasher>()?;
+    let hasher = app.resolve::<HashManager>()?;
 
     let user =
         users.create(crate::app::models::User::new(name, email, hasher.hash(password)?)).await?;

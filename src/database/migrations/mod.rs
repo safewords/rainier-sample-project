@@ -64,10 +64,13 @@ pub fn all() -> Migrator {
         // A framework component that needs a table brings its own migration.
         // The notification channel's rows are what the in-app list reads.
         .merge(rainier_framework::notifications::DatabaseChannel::migrations())
-    // Switching another driver to the database needs its tables too; merge
-    // them in here so `migrate` creates them:
+        // And the database queue's two tables, so `QUEUE_DRIVER=database` is
+        // one line in `.env` rather than a migration hunt. Creating tables a
+        // deployment may not use costs two empty tables; the reverse costs a
+        // boot that fails in production.
+        .merge(rainier_framework::queue::DatabaseQueue::migrations())
+    // Switching the session store to the database needs its table too:
     //
-    // .merge(rainier_framework::queue::DatabaseQueue::migrations())
     // .merge(rainier_framework::session::DatabaseSessionStore::migrations())
 }
 
@@ -90,6 +93,8 @@ mod tests {
                 "0007_create_post_tag",
                 "0008_posts_add_excerpt",
                 "rainier_notify_0001_notifications",
+                "rainier_queue_0001_jobs",
+                "rainier_queue_0002_failed_jobs",
             ]
         );
     }

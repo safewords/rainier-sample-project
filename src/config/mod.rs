@@ -8,10 +8,15 @@
 //! src/config/
 //!   mod.rs        the entry point, calling each section
 //!   keys.rs       every key this application names
-//!   app.rs        the application's name, environment, URL
+//!   app.rs        the application's name, environment, URL, cipher
+//!   database.rs   the one URL persistence hangs on
 //!   session.rs    the session driver and cookie
 //!   cache.rs      the cache driver and prefix
+//!   queue.rs      where dispatched jobs wait
+//!   hashing.rs    which algorithm passwords are written with
 //!   mail.rs       the mail driver, and everything each transport needs
+//!   storage.rs    where uploaded files live
+//!   kafka.rs      one cluster, three ports — queue, broadcast, relay
 //!   posts.rs      an application's own section
 //!   server.rs     the timeout and compression nginx would do
 //!   metrics.rs    Prometheus, off by default
@@ -66,8 +71,13 @@ use rainier_framework::prelude::*;
 
 pub mod app;
 pub mod cache;
+pub mod database;
+pub mod hashing;
+pub mod kafka;
 pub mod keys;
 pub mod mail;
+pub mod queue;
+pub mod storage;
 pub mod metrics;
 pub mod openapi;
 pub mod posts;
@@ -83,9 +93,14 @@ pub mod telemetry;
 /// overrides anything it wants to differ.
 pub fn configure(config: &Config, env: &Env) -> Result<()> {
     app::configure(config, env)?;
+    database::configure(config, env)?;
     session::configure(config, env)?;
     cache::configure(config, env)?;
+    queue::configure(config, env)?;
+    hashing::configure(config, env)?;
     mail::configure(config, env)?;
+    storage::configure(config, env)?;
+    kafka::configure(config, env)?;
     posts::configure(config, env)?;
     server::configure(config, env)?;
 
@@ -128,9 +143,14 @@ mod tests {
 
         for key in [
             keys::APP_NAME.path(),
+            keys::DATABASE_URL.path(),
             keys::SESSION_DRIVER.path(),
             keys::CACHE_DRIVER.path(),
+            keys::QUEUE_DRIVER.path(),
+            keys::HASH_DRIVER.path(),
             rainier_framework::keys::MAIL_DRIVER.path(),
+            keys::STORAGE_DRIVER.path(),
+            keys::KAFKA_BROKERS.path(),
             keys::POSTS_PER_PAGE.path(),
             keys::SERVER_REQUEST_TIMEOUT_SECS.path(),
             keys::METRICS_ENABLED.path(),
@@ -148,6 +168,10 @@ mod tests {
         let cases = [
             ("CACHE_DRIVER=redys", "CACHE_DRIVER", "`memcached`"),
             ("SESSION_DRIVER=redis", "SESSION_DRIVER", "`cookie`"),
+            ("QUEUE_DRIVER=databse", "QUEUE_DRIVER", "`database`"),
+            ("HASH_DRIVER=argon2", "HASH_DRIVER", "`argon2id`"),
+            ("STORAGE_DRIVER=r2", "STORAGE_DRIVER", "`s3`"),
+            ("APP_CIPHER=laravel", "APP_CIPHER", "`php`"),
         ];
 
         for (env, variable, expected_in_message) in cases {

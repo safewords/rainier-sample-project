@@ -40,7 +40,6 @@ pub enum Mode {
 
 /// Build and boot the application.
 pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
-    let database = connect(mode).await?;
     let env = Env::load_or_default(".env");
 
     // One registry, shared between the socket handler and anything else that
@@ -52,6 +51,11 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
     // middleware is declared, not added later.
     let settings = Config::new();
     config::configure(&settings, &env)?;
+
+    // After configuration, which is what it reads — `DATABASE_URL` lands in
+    // the tree like every other setting rather than being pulled from the
+    // raw environment here.
+    let database = connect(mode, &settings).await?;
 
     let metrics = MetricsSettings::from_config(&settings);
     let telemetry = TelemetrySettings::from_config(&settings);
@@ -102,6 +106,10 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
             }
         })
         .with_sessions(sessions(&env, &database)?)
+        // Uploaded files. Local by default; `STORAGE_DRIVER=s3` (behind the
+        // `s3` cargo feature) reaches AWS, R2, MinIO — anything that speaks
+        // the API.
+        .with_instance(storage(&settings).await?)
         .with_views(Arc::new(
             // Templates are re-read on every render outside production, so an
             // edit shows up without a restart.
@@ -314,20 +322,82 @@ fn missing_feature(driver: CacheDriver) -> Error {
     }
 }
 
+/// Build the file storage from `config/storage.rs`.
+///
+/// In `bootstrap` rather than a provider because the S3 arm resolves a
+/// credential chain, which is async — the same reason a connecting
+/// broadcaster lives here.
+async fn storage(settings: &Config) -> Result<rainier_framework::filesystem::Storage> {
+    use rainier_framework::filesystem::{FilesystemDriver, Storage};
+
+    match settings.setting(config::keys::STORAGE_DRIVER)? {
+        FilesystemDriver::Local => Ok(Storage::local(
+            settings.get_or(config::keys::STORAGE_ROOT, "storage/app".into()),
+        )),
+
+        FilesystemDriver::Memory => Ok(Storage::memory()),
+
+        FilesystemDriver::S3 => {
+            #[cfg(feature = "s3")]
+            {
+                use rainier_framework::drivers::AwsConnector;
+                use rainier_framework::filesystem::S3Filesystem;
+
+                let bucket = settings.get_or(config::keys::STORAGE_BUCKET, String::new());
+                if bucket.is_empty() {
+                    return Err(Error::internal(
+                        "STORAGE_DRIVER=s3 needs STORAGE_BUCKET to name the bucket",
+                    ));
+                }
+
+                // The default credential chain, pinned to a region when one
+                // is named. An endpoint is what points the same driver at R2
+                // or MinIO instead of AWS.
+                let region = settings.get_or(config::keys::STORAGE_REGION, String::new());
+                let mut connector = if region.is_empty() {
+                    AwsConnector::from_env().await
+                } else {
+                    AwsConnector::in_region(region).await
+                };
+
+                let endpoint = settings.get_or(config::keys::STORAGE_ENDPOINT, String::new());
+                if !endpoint.is_empty() {
+                    connector = connector.endpoint(endpoint);
+                }
+
+                let mut disk = S3Filesystem::new(&connector, bucket);
+
+                let prefix = settings.get_or(config::keys::STORAGE_URL_PREFIX, String::new());
+                if !prefix.is_empty() {
+                    disk = disk.with_url_prefix(prefix);
+                }
+
+                Ok(Storage::new(std::sync::Arc::new(disk)))
+            }
+            #[cfg(not(feature = "s3"))]
+            {
+                Err(Error::internal(
+                    "STORAGE_DRIVER=s3 needs the `s3` cargo feature, which this build does not \
+                     have",
+                ))
+            }
+        }
+    }
+}
+
 /// Open the database.
 ///
 /// SQLite in memory by default, so a fresh clone runs with no setup. Point
 /// `DATABASE_URL` at MySQL or Postgres and nothing else changes — that is the
 /// ORM's whole premise.
-async fn connect(mode: Mode) -> Result<Database> {
+async fn connect(mode: Mode, settings: &Config) -> Result<Database> {
     // The pool config is the ORM's; the executor is a *driver*. Rainier keeps
     // service interfacing in `rainier-drivers` so the ORM core has no optional
     // dependencies and stays compilable for wasm.
     use rainier_framework::drivers::sql::SeaOrmExecutor;
     use rainier_orm::PoolConfig;
 
-    let url = rainier_framework::config::Env::load_or_default(".env")
-        .string("DATABASE_URL", "sqlite::memory:");
+    let url = settings.get_or(config::keys::DATABASE_URL, "sqlite::memory:".into());
 
     // An in-memory SQLite database exists only as long as the connection
     // holding it, so the pool must keep exactly one **and never reap it**.

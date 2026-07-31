@@ -1,6 +1,7 @@
 //! `AuthController` — logging in and reading the current user.
 
-use rainier_framework::auth::{generate_session_id, Argon2Hasher, Hasher};
+use rainier_framework::auth::{generate_session_id, Hasher};
+use rainier_framework::crypt::hash::HashManager;
 use rainier_framework::prelude::*;
 
 use crate::app::models::User;
@@ -12,7 +13,7 @@ use crate::app::repositories::UserRepository;
 /// `POST /login` — exchange credentials for an API token.
 pub async fn login(Validated(input): Validated<LoginRequest>) -> Result<Response> {
     let users = resolve::<UserRepository>()?;
-    let hasher = resolve::<Argon2Hasher>()?;
+    let hasher = resolve::<HashManager>()?;
 
     // One message and one status for every failure mode, so the endpoint does
     // not reveal which addresses are registered.

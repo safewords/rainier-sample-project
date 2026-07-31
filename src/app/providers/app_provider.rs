@@ -11,8 +11,9 @@
 use std::sync::Arc;
 
 use rainier_framework::auth::{
-    Argon2Hasher, AuthManager, Hasher, RepositoryUserProvider, TokenGuard, UserProvider,
+    AuthManager, Hasher, RepositoryUserProvider, TokenGuard, UserProvider,
 };
+use rainier_framework::crypt::hash::{HashDriver, HashManager};
 use rainier_framework::broadcast::{Broadcasting, MemoryBroadcaster};
 use rainier_framework::broadcasting::BroadcastChannel;
 use rainier_framework::database::{EntityRepository, Migrator, Repository};
@@ -20,7 +21,9 @@ use rainier_framework::mail::{self, Mailer, MemoryTransport, Transport};
 use rainier_framework::notifications::DatabaseChannel;
 use rainier_framework::notify::MailChannel;
 use rainier_framework::prelude::*;
-use rainier_framework::queue::{JobRegistry, MemoryQueue, Queue as QueueDriver, QueueManager};
+use rainier_framework::queue::{
+    DatabaseQueue, JobRegistry, MemoryQueue, Queue as QueueContract, QueueManager, SyncQueue,
+};
 
 use crate::app::jobs::NotifyAuthor;
 use crate::app::models::{PostPublished, User};
@@ -88,6 +91,17 @@ impl ServiceProvider for AppServiceProvider {
     });
 }
 
+/// The queue driver exists but this build cannot construct it.
+///
+/// A different message from "unknown driver" on purpose: the fix is a cargo
+/// feature, not a spelling correction, and the message says which one.
+#[allow(dead_code, reason = "used only by the arms whose feature is off")]
+fn missing_queue_feature(driver: &str, feature: &str) -> Error {
+    Error::internal(format!(
+        "QUEUE_DRIVER={driver} needs the `{feature}` cargo feature, which this build does not have"
+    ))
+}
+
 /// Is the command being run one that manages migrations itself?
 ///
 /// Reading `argv` in a provider is not something to make a habit of — a
@@ -101,11 +115,27 @@ fn running_a_migration_command() -> bool {
 
 impl AppServiceProvider {
     fn hashing(&self, app: &Application) {
-        // Production parameters are deliberately slow; a test suite that logs
-        // in a few dozen times would crawl.
-        app.instance(match self.mode {
-            Mode::Testing => Argon2Hasher::insecure_for_tests(),
-            _ => Argon2Hasher::new(),
+        let mode = self.mode;
+
+        // The manager, not a bare driver: `HASH_DRIVER` names what `hash`
+        // writes, and verification dispatches on the stored hash's own prefix
+        // regardless — so changing algorithm is a deploy, and rows convert on
+        // their next successful login. The `bcrypt` cargo feature is what
+        // puts that driver on the manager; selecting it without the feature
+        // fails at boot naming it.
+        //
+        // A singleton rather than an instance because the driver comes from
+        // configuration, and `register` must not resolve.
+        app.singleton(move |container: &Container| {
+            match mode {
+                // Production parameters are deliberately slow; a test suite
+                // that logs in a few dozen times would crawl.
+                Mode::Testing => HashManager::insecure_for_tests(HashDriver::Argon2id),
+                Mode::Running => {
+                    let config = container.resolve::<rainier_framework::config::Config>()?;
+                    HashManager::new(config.setting(crate::config::keys::HASH_DRIVER)?)
+                }
+            }
         });
     }
 
@@ -114,7 +144,7 @@ impl AppServiceProvider {
         app.singleton(move |container: &Container| {
             let users: Arc<dyn Repository<User>> =
                 Arc::new(EntityRepository::<User>::new(db.clone()));
-            let hasher: Arc<dyn Hasher> = container.resolve::<Argon2Hasher>()?;
+            let hasher: Arc<dyn Hasher> = container.resolve::<HashManager>()?;
 
             let provider: Arc<dyn UserProvider<User>> =
                 Arc::new(RepositoryUserProvider::new(users, hasher));
@@ -210,17 +240,133 @@ impl AppServiceProvider {
     }
 
     fn queue(&self, app: &Application) {
-        app.singleton(move |_: &Container| {
+        let database = self.database.clone();
+        let mode = self.mode;
+
+        // The container itself, for the sync driver — it runs jobs inline and
+        // therefore needs somewhere to resolve their dependencies from.
+        let container_handle = Arc::clone(app.container());
+
+        app.singleton(move |container: &Container| {
             // Every job the worker must be able to run. A job missing from
             // here fails at run time with "no job is registered as …", so add
             // to this list whenever you add a job.
             let registry = Arc::new(JobRegistry::new().with::<NotifyAuthor>());
 
-            // In-memory: jobs are lost on restart and invisible to another
-            // process. Swap for `DatabaseQueue::new(db)` — and add
-            // `DatabaseQueue::migrations()` to `database/migrations.rs` — when
-            // you want them to survive.
-            let driver: Arc<dyn QueueDriver> = Arc::new(MemoryQueue::new());
+            let driver: Arc<dyn QueueContract> = match mode {
+                // In memory under test: a test wants a job *queued* so it can
+                // assert on it, not run under its feet.
+                Mode::Testing => Arc::new(MemoryQueue::new()),
+
+                // Whatever `QUEUE_DRIVER` names. Every arm a build carries is
+                // real; an arm whose cargo feature is missing fails here
+                // naming it — the difference between "the deployment asked
+                // for something this binary cannot do" and a queue that
+                // silently is not the one you asked for.
+                Mode::Running => {
+                    let config = container.resolve::<rainier_framework::config::Config>()?;
+
+                    match config.setting(crate::config::keys::QUEUE_DRIVER)? {
+                        // Inline: a failed job fails the request that
+                        // dispatched it. Right in development, wrong under
+                        // load — which is why it is the default and the docs
+                        // say so.
+                        QueueDriver::Sync => Arc::new(SyncQueue::new(
+                            Arc::clone(&registry),
+                            Arc::clone(&container_handle),
+                        )),
+
+                        QueueDriver::Memory => Arc::new(MemoryQueue::new()),
+
+                        // Two tables in the application's own database —
+                        // durable, shared, no new infrastructure. The usual
+                        // production answer, and its tables are already in
+                        // `database/migrations.rs`.
+                        QueueDriver::Database => Arc::new(DatabaseQueue::new(database.clone())),
+
+                        QueueDriver::Redis => {
+                            #[cfg(feature = "redis")]
+                            {
+                                use rainier_framework::drivers::RedisConnector;
+                                use rainier_framework::queue::RedisQueue;
+
+                                let url = config.get_or(
+                                    crate::config::keys::CACHE_REDIS_URL,
+                                    "redis://127.0.0.1:6379/".into(),
+                                );
+
+                                let queue = tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current().block_on(async {
+                                        RedisQueue::connect(&RedisConnector::open(&url)?).await
+                                    })
+                                })?;
+
+                                Arc::new(queue)
+                            }
+                            #[cfg(not(feature = "redis"))]
+                            {
+                                return Err(missing_queue_feature("redis", "redis"));
+                            }
+                        }
+
+                        QueueDriver::Sqs => {
+                            #[cfg(feature = "sqs")]
+                            {
+                                use rainier_framework::drivers::AwsConnector;
+                                use rainier_framework::queue::SqsQueue;
+
+                                let queue_url = config
+                                    .get_or(crate::config::keys::QUEUE_SQS_URL, String::new());
+
+                                let connector = tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current()
+                                        .block_on(AwsConnector::from_env())
+                                });
+
+                                Arc::new(SqsQueue::new(&connector, queue_url))
+                            }
+                            #[cfg(not(feature = "sqs"))]
+                            {
+                                return Err(missing_queue_feature("sqs", "sqs"));
+                            }
+                        }
+
+                        // A log is not a queue — read `rainier_queue::kafka`
+                        // before choosing this. The constructor refuses a
+                        // lock manager that is not shared, because the quiet
+                        // version of that mistake is every job running on
+                        // every machine.
+                        QueueDriver::Kafka => {
+                            #[cfg(feature = "kafka")]
+                            {
+                                use rainier_framework::kafka;
+
+                                let client = tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current()
+                                        .block_on(kafka::client(&config))
+                                })?;
+
+                                // An owned manager over the same store the
+                                // application's own locks use — the queue
+                                // constructor takes it by value, and what
+                                // matters is the store being shared.
+                                let locks = container
+                                    .resolve::<rainier_framework::cache::LockManager>()?;
+                                let locks = rainier_framework::cache::LockManager::new(
+                                    Arc::clone(locks.cache()),
+                                );
+
+                                Arc::new(kafka::queue(&config, client, locks)?)
+                            }
+                            #[cfg(not(feature = "kafka"))]
+                            {
+                                return Err(missing_queue_feature("kafka", "kafka"));
+                            }
+                        }
+                    }
+                }
+            };
+
             Ok(QueueManager::new(driver, registry))
         });
     }

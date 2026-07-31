@@ -216,6 +216,51 @@ Generate a key with `cargo run -- key:generate`. Without one a random key is
 minted per boot, which works and silently invalidates everything the last boot
 encrypted — so it warns.
 
+## Sizing the binary
+
+Every subsystem a deployment does not use is a cargo feature it does not
+enable — the Redis and Memcached clients, each mail sender, SQS, Kafka, S3,
+the bcrypt driver, the JWT stack, the outbound HTTP transport. The default
+build carries none of them, and a fresh clone still runs: SQLite in memory,
+inline jobs, logged mail, local files.
+
+Dead-code elimination will not do this for you. The driver `match`es in
+`bootstrap.rs` and the providers are deliberately exhaustive — that is what
+makes a misconfigured deployment fail loudly — so every compiled driver is
+*referenced*, and the linker keeps it. Features are the sizing mechanism.
+
+And cargo cannot flip them on by itself: features are resolved **before**
+anything compiles, they are additive-only, and a build script cannot add one.
+"The compiler sees `MAIL_DRIVER=smtp` and enables `mail-smtp`" is not a thing
+cargo can do. What it *can* do is be told — so the feature list is computed
+rather than hand-maintained:
+
+```sh
+cargo xtask features                       # what .env implies, with reasons
+cargo xtask features --env .env.production
+cargo xtask features --check               # CI: fail on a selection nothing forwards
+cargo xtask build --env .env.production --release
+```
+
+`xtask` reads the two honest sources — the deployment's environment file for
+every runtime driver selection, and the source tree for the compile-time
+choices (`Jwt`, the `Http` facade) — and emits the minimal
+`--no-default-features --features "…"` invocation:
+
+```text
+# from .env.production
+#   redis          CACHE_DRIVER=redis
+#   mail-smtp      MAIL_DRIVER=smtp
+cargo build --release --no-default-features --features "mail-smtp,redis"
+```
+
+A selection nothing forwards — `CACHE_DRIVER=dynamodb`, which this
+application never wired — is an error rather than a silently smaller list,
+and `--check` turns it into a failing CI step. When the framework grows a
+driver, the compiler already points at every `match` arm that must learn it;
+the mapping table in `xtask/src/main.rs` is one more such place, and the
+comment at the top of it says so.
+
 ## Going to production
 
 - **Database.** Set `DATABASE_URL`. SQLite in memory is wiped on exit.

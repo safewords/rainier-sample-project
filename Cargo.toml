@@ -33,11 +33,36 @@ tracing = "0.1"
 # without the feature, the driver falls back to memory with a warning rather
 # than failing, because a cache is the one dependency an app should be able to
 # lose.
+# The application is also a tiny workspace: `xtask` is the dev-tool that
+# computes the feature set a deployment needs (`cargo xtask features`).
+[workspace]
+members = [".", "xtask"]
+
 [features]
 default = []
 redis = ["rainier-framework/redis"]
 redis-cluster = ["redis", "rainier-framework/redis-cluster"]
 memcached = ["rainier-framework/memcached"]
+
+# Queue drivers beyond sync/memory/database (which need nothing).
+sqs = ["rainier-framework/sqs"]
+kafka = ["rainier-framework/kafka"]
+kafka-tls = ["kafka", "rainier-framework/kafka-tls"]
+
+# File storage on S3 and everything that speaks its API - R2, MinIO, B2.
+s3 = ["rainier-framework/s3"]
+
+# The bcrypt hash driver: HASH_DRIVER=bcrypt, and reading a `$2y$` table a
+# PHP application left behind. Without it argon2id is the whole set.
+bcrypt = ["rainier-framework/bcrypt"]
+
+# API-gating features: these compile framework surface your code can then
+# reach for - they wire nothing by themselves.
+# RS256/ES256 tokens and a JWKS document.
+jwt = ["rainier-framework/jwt"]
+# A real transport behind the `Http` facade (the client API and its fake are
+# always there; only the socket costs a TLS stack).
+http-client = ["rainier-framework/http-client"]
 
 # Mail senders, one per destination — without one, MAIL_DRIVER can still be
 # log, file or memory, and selecting a sender fails the boot naming the

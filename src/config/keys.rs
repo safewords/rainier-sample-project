@@ -37,6 +37,38 @@ config_keys! {
 
     /// The largest page a client may ask for.
     pub POSTS_MAX_PER_PAGE: u64 = "posts.max_per_page";
+
+    /// The SQS queue URL, when `QUEUE_DRIVER=sqs`.
+    ///
+    /// An application key in the framework's `queue.*` section — safe today
+    /// because the framework declares no such path, and the collision test
+    /// there would catch it growing one.
+    pub QUEUE_SQS_URL: String = "queue.sqs_url";
+
+    // --- storage -------------------------------------------------------------
+    //
+    // The framework's `Storage` takes a built filesystem rather than reading
+    // configuration, so the section is this application's — the same reason
+    // `posts.*` is.
+
+    /// Where uploaded files live: `local`, `memory`, or `s3`.
+    pub STORAGE_DRIVER: rainier_framework::filesystem::FilesystemDriver = "storage.driver";
+
+    /// The directory the `local` driver writes under.
+    pub STORAGE_ROOT: String = "storage.root";
+
+    /// The `s3` bucket.
+    pub STORAGE_BUCKET: String = "storage.bucket";
+
+    /// Its region. Empty defers to the SDK's own resolution.
+    pub STORAGE_REGION: String = "storage.region";
+
+    /// A custom endpoint — what points the same driver at Cloudflare R2 or
+    /// MinIO instead of AWS. Empty means AWS's own.
+    pub STORAGE_ENDPOINT: String = "storage.endpoint";
+
+    /// The public URL prefix objects are reachable at, when there is one.
+    pub STORAGE_URL_PREFIX: String = "storage.url_prefix";
 }
 
 // The framework's keys — `APP_NAME`, `CACHE_DRIVER`, `SESSION_LIFETIME`, and
