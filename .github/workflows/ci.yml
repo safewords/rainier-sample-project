@@ -22,6 +22,8 @@ jobs:
   check:
     name: fmt and clippy
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -29,7 +31,31 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo fmt --all --check
+      - run: cargo fmt --all
+
+      # On main, drift is repaired rather than reported — the framework's CI
+      # does the same. `[skip ci]` because the formatted tree is
+      # token-identical to the one the rest of this very run is testing. On
+      # a pull request this stays a failing check: CI has no business
+      # rewriting a contributor's branch, and the diff in the log is a
+      # better error than `--check`'s.
+      - name: Commit the formatting on main, or fail anywhere else
+        run: |
+          if git diff --quiet; then
+            echo "already formatted"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -am "style: cargo fmt [skip ci]"
+            git pull --rebase origin main
+            git push
+          else
+            git diff
+            exit 1
+          fi
+
       - run: cargo clippy --all-targets -- -D warnings
 
   test:
