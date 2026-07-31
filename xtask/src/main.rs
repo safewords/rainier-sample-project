@@ -8,15 +8,22 @@
 //!
 //! ```text
 //! cargo xtask features                     # what .env implies, with reasons
-//! cargo xtask features --env .env.production
+//! cargo xtask features --env .env.build
+//! cargo xtask features --env .env.build --list   # bare list, for scripts
 //! cargo xtask features --check             # CI: fail on an unforwarded selection
-//! cargo xtask build --env .env.production --release
+//! cargo xtask build --env .env.build --release
 //! ```
+//!
+//! An environment file is **required** — an explicit `--env`, or `.env`.
+//! There is no fallback to `.env.example`: sizing a build from the example's
+//! defaults would shape the binary like the documentation rather than the
+//! deployment, silently. Preview against the defaults with
+//! `--env .env.example` when that is what you mean.
 
 use std::path::PathBuf;
 use std::process::Command;
 
-use rainier_features::{compute, parse_env, read_sources, Report};
+use rainier_features::{compute, parse_env, read_sources, resolve_env, Report};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -27,8 +34,8 @@ fn main() {
         "build" => build_command(&args),
         _ => {
             eprintln!(
-                "usage:\n  cargo xtask features [--env <file>] [--check]\n  cargo xtask build \
-                 [--env <file>] [<cargo args>…]"
+                "usage:\n  cargo xtask features [--env <file>] [--check] [--list]\n  cargo xtask \
+                 build [--env <file>] [<cargo args>…]"
             );
             2
         }
@@ -39,10 +46,26 @@ fn main() {
 
 fn features_command(args: &[String]) -> i32 {
     let check = args.iter().any(|a| a == "--check");
+    let list = args.iter().any(|a| a == "--list");
 
-    let Some(report) = load(args) else { return 1 };
+    let Some((path, report)) = load(args) else { return 1 };
 
-    println!("# from {}", env_path(args).display());
+    if list {
+        // The scripting mode: the bare comma-separated list on stdout and
+        // nothing else — what the Dockerfile substitutes into `--features`.
+        // An unforwarded selection is always fatal here, because a script
+        // cannot read a caveat.
+        if !report.unforwarded.is_empty() {
+            for problem in &report.unforwarded {
+                eprintln!("error: {problem}");
+            }
+            return 1;
+        }
+        println!("{}", report.feature_list());
+        return 0;
+    }
+
+    println!("# from {}", path.display());
     for line in &report.reasons {
         println!("#   {line}");
     }
@@ -64,7 +87,7 @@ fn features_command(args: &[String]) -> i32 {
 }
 
 fn build_command(args: &[String]) -> i32 {
-    let Some(report) = load(args) else { return 1 };
+    let Some((_, report)) = load(args) else { return 1 };
 
     if !report.unforwarded.is_empty() {
         for problem in &report.unforwarded {
@@ -104,8 +127,20 @@ fn build_command(args: &[String]) -> i32 {
     }
 }
 
-fn load(args: &[String]) -> Option<Report> {
-    let path = env_path(args);
+fn load(args: &[String]) -> Option<(PathBuf, Report)> {
+    let explicit = args
+        .iter()
+        .position(|a| a == "--env")
+        .and_then(|i| args.get(i + 1))
+        .map(PathBuf::from);
+
+    let path = match resolve_env(explicit) {
+        Ok(path) => path,
+        Err(why) => {
+            eprintln!("error: {why}");
+            return None;
+        }
+    };
 
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
@@ -115,20 +150,6 @@ fn load(args: &[String]) -> Option<Report> {
         }
     };
 
-    Some(compute(&parse_env(&text), &read_sources(std::path::Path::new("src"))))
-}
-
-fn env_path(args: &[String]) -> PathBuf {
-    args.iter()
-        .position(|a| a == "--env")
-        .and_then(|i| args.get(i + 1))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let dot_env = PathBuf::from(".env");
-            if dot_env.exists() {
-                dot_env
-            } else {
-                PathBuf::from(".env.example")
-            }
-        })
+    let report = compute(&parse_env(&text), &read_sources(std::path::Path::new("src")));
+    Some((path, report))
 }

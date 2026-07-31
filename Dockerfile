@@ -1,10 +1,14 @@
-# A Rainier application, built and shipped.
+# A Rainier application, built and shipped — **sized to its deployment**.
 #
 # Two stages: a builder with the toolchain, and a runtime with neither the
 # toolchain nor a shell's worth of userland. The result is the binary, the
-# templates it renders, and nothing else.
+# templates it renders, and nothing else — and the binary carries only the
+# drivers the deployment's environment selects.
 #
+#   printf 'CACHE_DRIVER=redis\nMAIL_DRIVER=smtp\n' > .env.build
 #   docker build -t rainier-sample .
+#   docker build --build-arg ENV_FILE=.env.staging.build -t rainier-sample:staging .
+#
 #   docker run --rm -p 8000:8000 \
 #     -e APP_KEY="$(openssl rand -base64 32 | sed 's/^/base64:/')" \
 #     -e DATABASE_URL=sqlite:///data/app.sqlite?mode=rwc \
@@ -14,21 +18,51 @@
 # --- build -------------------------------------------------------------------
 
 # Pinned, so an image built today and one built in six months are the same
-# image. Above the framework's own 1.88 floor on purpose: enabling a driver
-# raises it — the AWS SDKs want 1.94 — and the floor moves whenever a
-# dependency decides it should.
-FROM rust:1.90-bookworm AS builder
+# image. 1.94 rather than the framework's own 1.88 floor, because this image
+# must be able to build *any* sized feature set and enabling a driver raises
+# the floor — the AWS SDKs (`s3`, `sqs`) want 1.94.
+FROM rust:1.94-bookworm AS builder
 
 WORKDIR /build
 
-# Dependencies first, in their own layer. Copying the manifests and building a
-# stub means a change to `src/` does not rebuild three hundred crates — which
-# is the difference between a twenty-second image and a five-minute one.
+# Which environment file sizes this image. `.env.build` by convention: the
+# deployment's **driver selections and nothing secret** — this file lands in
+# builder layers and the build cache, which is exactly where credentials must
+# not, and the sizing needs only the selections. Secrets keep arriving at
+# `docker run` as `-e`, the way the run command above shows. (`.env` itself
+# is dockerignored for the same reason.)
+#
+# The default requires the file to exist, deliberately: an image sized
+# without the deployment's selections would be sized wrong — the example's
+# defaults would ship a log-mail, memory-cache binary — so a missing file
+# fails the next COPY instead of shipping a documentation-shaped image.
+ARG ENV_FILE=.env.build
+
+# Manifests for both workspace members, and the xtask's (tiny) source: the
+# feature computation runs before anything heavy so its answer can shape the
+# cached dependency layer too. Stub sources stand in for the application so
+# cargo can read the workspace without rebuilding three hundred crates every
+# time `src/` changes.
 COPY Cargo.toml Cargo.lock ./
+COPY xtask/Cargo.toml xtask/Cargo.toml
+COPY xtask/src xtask/src
+COPY ${ENV_FILE} .env.build
+
 RUN mkdir -p src \
  && echo 'fn main() {}' > src/main.rs \
- && echo '' > src/lib.rs \
- && cargo build --release --locked \
+ && echo '' > src/lib.rs
+
+# Compute the feature set once, from the selections. `--list` is the
+# scripting mode: the bare comma-separated set, and a selection nothing
+# forwards fails the build here, loudly.
+RUN cargo run --quiet --locked --package xtask -- features --env .env.build --list > .features \
+ && echo "sized with features: [$(cat .features)]"
+
+# Dependencies, in their own layer, with the *right* features — so the cache
+# holds what the real build needs rather than a default set it rebuilds over.
+RUN FEATURES="$(cat .features)" \
+ && cargo build --release --locked --package app --no-default-features \
+        ${FEATURES:+--features "$FEATURES"} \
  && rm -rf src
 
 COPY src ./src
@@ -38,7 +72,9 @@ COPY resources ./resources
 # sources it just replaced, and cargo would otherwise decide there is nothing
 # to do and ship the stub.
 RUN touch src/main.rs src/lib.rs \
- && cargo build --release --locked \
+ && FEATURES="$(cat .features)" \
+ && cargo build --release --locked --package app --no-default-features \
+        ${FEATURES:+--features "$FEATURES"} \
  && strip target/release/app
 
 # --- runtime -----------------------------------------------------------------

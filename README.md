@@ -237,10 +237,17 @@ rather than hand-maintained:
 
 ```sh
 cargo xtask features                       # what .env implies, with reasons
-cargo xtask features --env .env.production
+cargo xtask features --env .env.build
+cargo xtask features --env .env.build --list   # bare list, for scripts
 cargo xtask features --check               # CI: fail on a selection nothing forwards
-cargo xtask build --env .env.production --release
+cargo xtask build --env .env.build --release
 ```
+
+An environment file is **required** — an explicit `--env`, or `.env`. There
+is deliberately no fallback to `.env.example`: sizing a build from the
+example's defaults would shape the binary like the documentation rather than
+the deployment, silently. Preview against the defaults with
+`--env .env.example` when that is what you mean.
 
 The logic is the framework's `rainier-features` crate — the driver→feature
 mapping is knowledge about Rainier, and its tests there walk every driver
@@ -289,8 +296,20 @@ repository.
 
 ## Docker
 
+The image is **sized to its deployment**: the builder computes the feature
+set from a selections-only env file and builds with it. The file is required
+— a build without one fails at its `COPY` rather than shipping a
+documentation-shaped binary — and it must hold **driver selections only,
+never secrets**, because it travels into builder layers and the build cache.
+Secrets keep arriving at `docker run` as `-e`.
+
 ```sh
+printf 'CACHE_DRIVER=redis
+MAIL_DRIVER=smtp
+' > .env.build
+
 docker build -t rainier-sample .
+docker build --build-arg ENV_FILE=.env.staging.build -t rainier-sample:staging .
 
 docker run --rm -p 8000:8000 \
   -e APP_KEY="base64:$(openssl rand -base64 32)" \

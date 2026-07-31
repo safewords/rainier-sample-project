@@ -9,7 +9,10 @@
 # told separately.
 /.cargo
 
-# Secrets, and per-developer state.
+# Secrets, and per-developer state. `.env.build` is deliberately **not**
+# ignored: it is the selections-only file that sizes the image (see the
+# Dockerfile), and it must never hold a credential precisely because it
+# travels into the build.
 .env
 *.sqlite
 *.sqlite-journal
