@@ -26,6 +26,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # The ARC runner image has no C toolchain; see the action.
+      - uses: ./.github/actions/system-deps
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -71,6 +73,8 @@ jobs:
           - { name: memcached, flags: "--features memcached" }
     steps:
       - uses: actions/checkout@v4
+      # The ARC runner image has no C toolchain; see the action.
+      - uses: ./.github/actions/system-deps
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -88,6 +92,8 @@ jobs:
     runs-on: safewords-runners
     steps:
       - uses: actions/checkout@v4
+      # The ARC runner image has no C toolchain; see the action.
+      - uses: ./.github/actions/system-deps
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -123,6 +129,8 @@ jobs:
     runs-on: safewords-runners
     steps:
       - uses: actions/checkout@v4
+      # The ARC runner image has no C toolchain; see the action.
+      - uses: ./.github/actions/system-deps
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
