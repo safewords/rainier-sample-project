@@ -76,6 +76,11 @@ jobs:
       # The ARC runner image has no C toolchain; see the action.
       - uses: ./.github/actions/system-deps
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Asked for explicitly: this job runs clippy below, and a bare
+          # runner's rustup install is minimal-profile — only the hosted
+          # images happened to preinstall the component.
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.name }}
