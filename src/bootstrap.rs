@@ -18,7 +18,7 @@ use rainier_framework::session::{
     CacheSessionStore, CookieSessionStore, DatabaseSessionStore, MemorySessionStore, SessionConfig,
     SessionManager, SessionStore,
 };
-use rainier_framework::view::BladeEngine;
+use rainier_framework::view::TemplateEngine;
 
 use crate::app::http::kernel;
 use crate::app::providers::{AppServiceProvider, EventServiceProvider, RepositoryServiceProvider};
@@ -106,8 +106,8 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
             // Templates are re-read on every render outside production, so an
             // edit shows up without a restart.
             match mode {
-                Mode::Running => BladeEngine::new("resources/views"),
-                Mode::Testing => BladeEngine::new("resources/views").without_cache(),
+                Mode::Running => TemplateEngine::new("resources/views"),
+                Mode::Testing => TemplateEngine::new("resources/views").without_cache(),
             },
         ))
         .with_database(database.clone())

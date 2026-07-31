@@ -28,13 +28,9 @@ config_keys! {
     /// has the closed set.
     pub SESSION_SAME_SITE: String = "session.same_site";
 
-    /// Where the `file` mail transport writes its `.eml` files.
-    pub MAIL_FILE_PATH: String = "mail.file_path";
-
-    /// Redirect every message here instead of to its real recipients.
-    ///
-    /// Absent unless set — see `config/mail.rs` for why that matters.
-    pub MAIL_ALWAYS_TO: String = "mail.always_to";
+    // The mail keys live in `rainier_framework::keys` — the framework owns
+    // the whole `mail.*` section now that it builds the transports. See
+    // `config/mail.rs` for where this application reads them.
 
     /// How many posts a listing shows by default.
     pub POSTS_PER_PAGE: u64 = "posts.per_page";

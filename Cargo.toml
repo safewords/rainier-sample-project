@@ -39,11 +39,22 @@ redis = ["rainier-framework/redis"]
 redis-cluster = ["redis", "rainier-framework/redis-cluster"]
 memcached = ["rainier-framework/memcached"]
 
+# Mail senders, one per destination — without one, MAIL_DRIVER can still be
+# log, file or memory, and selecting a sender fails the boot naming the
+# feature it needs. `mail-smtp` pairs with the Mailpit container for
+# development; see `config/mail.rs`.
+mail-smtp = ["rainier-framework/mail-smtp"]
+mail-ses = ["rainier-framework/mail-ses"]
+mail-postmark = ["rainier-framework/mail-postmark"]
+mail-mailgun = ["rainier-framework/mail-mailgun"]
+mail-sendgrid = ["rainier-framework/mail-sendgrid"]
+mail-resend = ["rainier-framework/mail-resend"]
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 # One `app` library plus one `app` binary: the binary is the console entry
-# point (Laravel's `artisan`), and the library is what the tests boot.
+# point, and the library is what the tests boot.
 [lib]
 name = "app"
 path = "src/lib.rs"

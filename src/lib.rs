@@ -26,7 +26,7 @@
 //!     web.rs            routes/web.php
 //!     api.rs            routes/api.php
 //!     console.rs        routes/console.php
-//! resources/views/      resources/views     — Blade-style templates
+//! resources/views/      resources/views     — `*.view.html` templates
 //! ```
 //!
 //! Two differences worth knowing, both because Rust has no autoloading:

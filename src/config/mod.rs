@@ -1,23 +1,22 @@
-//! Configuration — Laravel's `config/` directory.
+//! Configuration — the `config/` directory.
 //!
-//! Laravel has one file per concern returning an array. This is one **module**
-//! per concern, each writing into the same dotted tree — so the keys are the
-//! same (`app.name`, `session.lifetime`, `posts.per_page`) and so is the
-//! reason to split them: a file you can read in one screen.
+//! One **module** per concern, each writing into the same dotted tree
+//! (`app.name`, `session.lifetime`, `posts.per_page`). The reason to split
+//! them is a file you can read in one screen.
 //!
 //! ```text
 //! src/config/
 //!   mod.rs        the entry point, calling each section
-//!   keys.rs       every key this application names — no Laravel equivalent
-//!   app.rs        config/app.php
-//!   session.rs    config/session.php
-//!   cache.rs      config/cache.php
-//!   mail.rs       config/mail.php
-//!   posts.rs      config/posts.php — an application's own section
-//!   server.rs     —                — the timeout and compression nginx would do
-//!   metrics.rs    —                — Prometheus, off by default
-//!   openapi.rs    —                — the generated API document
-//!   telemetry.rs  —                — OpenTelemetry
+//!   keys.rs       every key this application names
+//!   app.rs        the application's name, environment, URL
+//!   session.rs    the session driver and cookie
+//!   cache.rs      the cache driver and prefix
+//!   mail.rs       the mail driver, and everything each transport needs
+//!   posts.rs      an application's own section
+//!   server.rs     the timeout and compression nginx would do
+//!   metrics.rs    Prometheus, off by default
+//!   openapi.rs    the generated API document
+//!   telemetry.rs  OpenTelemetry
 //! ```
 //!
 //! Read any of it back with the `Config` facade:
@@ -30,7 +29,6 @@
 //!
 //! ## Nothing here is a magic string
 //!
-//! `keys.rs` has no Laravel counterpart because PHP has nowhere to put it.
 //! Every path is a [`Key<T>`] declared once, and every value with a fixed set
 //! of options is an enum:
 //!
@@ -132,7 +130,7 @@ mod tests {
             keys::APP_NAME.path(),
             keys::SESSION_DRIVER.path(),
             keys::CACHE_DRIVER.path(),
-            keys::MAIL_FILE_PATH.path(),
+            rainier_framework::keys::MAIL_DRIVER.path(),
             keys::POSTS_PER_PAGE.path(),
             keys::SERVER_REQUEST_TIMEOUT_SECS.path(),
             keys::METRICS_ENABLED.path(),

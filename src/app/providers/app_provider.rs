@@ -16,9 +16,7 @@ use rainier_framework::auth::{
 use rainier_framework::broadcast::{Broadcasting, MemoryBroadcaster};
 use rainier_framework::broadcasting::BroadcastChannel;
 use rainier_framework::database::{EntityRepository, Migrator, Repository};
-use rainier_framework::mail::{
-    Address, FileTransport, LogTransport, Mailer, MemoryTransport, Transport,
-};
+use rainier_framework::mail::{self, Mailer, MemoryTransport, Transport};
 use rainier_framework::notifications::DatabaseChannel;
 use rainier_framework::notify::MailChannel;
 use rainier_framework::prelude::*;
@@ -131,32 +129,35 @@ impl AppServiceProvider {
         // In testing the memory transport is *also* bound on its own, so a
         // test can resolve it and assert on what was sent — the mailer only
         // exposes it as `dyn Transport`.
-        let transport: Arc<dyn Transport> = match self.mode {
+        let captured: Option<Arc<MemoryTransport>> = match self.mode {
             Mode::Testing => {
                 let memory = Arc::new(MemoryTransport::new());
                 app.instance_arc(Arc::clone(&memory));
-                memory
+                Some(memory)
             }
-            Mode::Running => {
-                match Config::instance().get_or("mail.driver", "log".to_string()).as_str() {
-                    "file" => Arc::new(FileTransport::new(
-                        Config::instance().get_or("mail.file_path", "storage/mail".to_string()),
-                    )?),
-                    _ => Arc::new(LogTransport),
-                }
-            }
+            Mode::Running => None,
         };
 
         app.singleton(move |container: &Container| {
             let views = container.resolve::<rainier_framework::Views>()?;
             let config = container.resolve::<rainier_framework::config::Config>()?;
+            let engine = Arc::clone(views.engine());
 
-            Ok(Mailer::new(Arc::clone(views.engine()), Arc::clone(&transport))
-                .with_events(container.resolve::<Dispatcher>()?)
-                .with_default_from(Address::named(
-                    config.get_or("mail.from.address", "hello@example.com".to_string()),
-                    config.get_or("mail.from.name", "Rainier".to_string()),
-                )))
+            // Running mode builds whatever `MAIL_DRIVER` names, from the
+            // settings `config/mail.rs` read — the exhaustive match lives in
+            // the framework, and a sender this build did not enable fails
+            // here naming its cargo feature. Testing swaps in the captured
+            // transport and keeps everything else the same.
+            let mailer = match &captured {
+                Some(memory) => mail::mailer_over(
+                    &config,
+                    engine,
+                    Arc::clone(memory) as Arc<dyn Transport>,
+                ),
+                None => mail::mailer(&config, engine)?,
+            };
+
+            Ok(mailer.with_events(container.resolve::<Dispatcher>()?))
         });
         Ok(())
     }
