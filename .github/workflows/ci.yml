@@ -19,14 +19,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Every job picks its runner by trust: a pull request is outside code and
-  # runs on GitHub-hosted runners, never inside the cluster — a fork PR needs
-  # no secrets to be dangerous when the runner shares a network with
-  # production. Trusted refs (push to main, the schedule, dispatch) use the
-  # in-cluster fleet.
+  # This repo is public, and GitHub-hosted standard runners are free with
+  # unlimited minutes for public repos — so everything runs there. That is
+  # also the security boundary: outside code never executes inside the
+  # cluster, whose fleet serves only the private repos. The system-deps
+  # shim stays and no-ops on the hosted image.
   check:
     name: fmt and clippy
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'safewords-runners' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -67,7 +67,7 @@ jobs:
 
   test:
     name: test (${{ matrix.name }})
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'safewords-runners' }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -99,7 +99,7 @@ jobs:
 
   migrations:
     name: migrations round-trip
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'safewords-runners' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       # The ARC runner image has no C toolchain; see the action.
@@ -136,7 +136,7 @@ jobs:
 
   routes:
     name: the application boots
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'safewords-runners' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       # The ARC runner image has no C toolchain; see the action.
@@ -153,7 +153,7 @@ jobs:
 
   docker:
     name: docker image
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'safewords-runners' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
