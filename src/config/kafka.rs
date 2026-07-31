@@ -16,24 +16,16 @@ use crate::config::keys;
 pub fn configure(config: &Config, env: &Env) -> Result<()> {
     config.set(keys::KAFKA_BROKERS, env.string("KAFKA_BROKERS", ""))?;
     config.set(keys::KAFKA_GROUP, env.string("KAFKA_GROUP", "app"))?;
-    config.set(
-        keys::KAFKA_TOPIC_PREFIX,
-        env.string("KAFKA_TOPIC_PREFIX", "app"),
-    )?;
-    config.set(
-        keys::KAFKA_BROADCAST_TOPIC,
-        env.string("KAFKA_BROADCAST_TOPIC", "app.broadcast"),
-    )?;
+    config.set(keys::KAFKA_TOPIC_PREFIX, env.string("KAFKA_TOPIC_PREFIX", "app"))?;
+    config
+        .set(keys::KAFKA_BROADCAST_TOPIC, env.string("KAFKA_BROADCAST_TOPIC", "app.broadcast"))?;
 
     config.set(keys::KAFKA_TLS, env.bool("KAFKA_TLS", false))?;
     config.set(keys::KAFKA_USERNAME, env.string("KAFKA_USERNAME", ""))?;
     config.set(keys::KAFKA_PASSWORD, env.string("KAFKA_PASSWORD", ""))?;
     // The framework refuses a misspelled mechanism at boot rather than
     // falling back to PLAIN — which would send the password in the clear.
-    config.set(
-        keys::KAFKA_SASL_MECHANISM,
-        env.string("KAFKA_SASL_MECHANISM", ""),
-    )?;
+    config.set(keys::KAFKA_SASL_MECHANISM, env.string("KAFKA_SASL_MECHANISM", ""))?;
 
     Ok(())
 }
@@ -54,16 +46,10 @@ mod tests {
     #[test]
     fn a_deployment_names_its_brokers() {
         let config = Config::new();
-        configure(
-            &config,
-            &Env::parse("KAFKA_BROKERS=kafka-1:9092,kafka-2:9092\nKAFKA_TLS=true"),
-        )
-        .unwrap();
+        configure(&config, &Env::parse("KAFKA_BROKERS=kafka-1:9092,kafka-2:9092\nKAFKA_TLS=true"))
+            .unwrap();
 
-        assert_eq!(
-            config.get(keys::KAFKA_BROKERS).as_deref(),
-            Some("kafka-1:9092,kafka-2:9092")
-        );
+        assert_eq!(config.get(keys::KAFKA_BROKERS).as_deref(), Some("kafka-1:9092,kafka-2:9092"));
         assert_eq!(config.get(keys::KAFKA_TLS), Some(true));
     }
 }

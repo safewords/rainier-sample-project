@@ -18,10 +18,7 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     // the variable and the valid values, rather than silently hashing with
     // something the configuration did not say. `bcrypt` needs its cargo
     // feature, and selecting it without one fails at boot naming it.
-    config.set(
-        keys::HASH_DRIVER,
-        env.setting_or("HASH_DRIVER", HashDriver::Argon2id)?,
-    )?;
+    config.set(keys::HASH_DRIVER, env.setting_or("HASH_DRIVER", HashDriver::Argon2id)?)?;
 
     Ok(())
 }
@@ -35,10 +32,7 @@ mod tests {
         let config = Config::new();
         configure(&config, &Env::new()).unwrap();
 
-        assert_eq!(
-            config.setting(keys::HASH_DRIVER).unwrap(),
-            HashDriver::Argon2id
-        );
+        assert_eq!(config.setting(keys::HASH_DRIVER).unwrap(), HashDriver::Argon2id);
     }
 
     #[test]

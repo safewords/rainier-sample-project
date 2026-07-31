@@ -13,9 +13,9 @@ use std::sync::Arc;
 use rainier_framework::auth::{
     AuthManager, Hasher, RepositoryUserProvider, TokenGuard, UserProvider,
 };
-use rainier_framework::crypt::hash::{HashDriver, HashManager};
 use rainier_framework::broadcast::{Broadcasting, MemoryBroadcaster};
 use rainier_framework::broadcasting::BroadcastChannel;
+use rainier_framework::crypt::hash::{HashDriver, HashManager};
 use rainier_framework::database::{EntityRepository, Migrator, Repository};
 use rainier_framework::mail::{self, Mailer, MemoryTransport, Transport};
 use rainier_framework::notifications::DatabaseChannel;
@@ -179,11 +179,9 @@ impl AppServiceProvider {
             // here naming its cargo feature. Testing swaps in the captured
             // transport and keeps everything else the same.
             let mailer = match &captured {
-                Some(memory) => mail::mailer_over(
-                    &config,
-                    engine,
-                    Arc::clone(memory) as Arc<dyn Transport>,
-                ),
+                Some(memory) => {
+                    mail::mailer_over(&config, engine, Arc::clone(memory) as Arc<dyn Transport>)
+                }
                 None => mail::mailer(&config, engine)?,
             };
 
@@ -350,11 +348,11 @@ impl AppServiceProvider {
                                 // application's own locks use — the queue
                                 // constructor takes it by value, and what
                                 // matters is the store being shared.
-                                let locks = container
-                                    .resolve::<rainier_framework::cache::LockManager>()?;
-                                let locks = rainier_framework::cache::LockManager::new(
-                                    Arc::clone(locks.cache()),
-                                );
+                                let locks =
+                                    container.resolve::<rainier_framework::cache::LockManager>()?;
+                                let locks = rainier_framework::cache::LockManager::new(Arc::clone(
+                                    locks.cache(),
+                                ));
 
                                 Arc::new(kafka::queue(&config, client, locks)?)
                             }

@@ -331,9 +331,9 @@ async fn storage(settings: &Config) -> Result<rainier_framework::filesystem::Sto
     use rainier_framework::filesystem::{FilesystemDriver, Storage};
 
     match settings.setting(config::keys::STORAGE_DRIVER)? {
-        FilesystemDriver::Local => Ok(Storage::local(
-            settings.get_or(config::keys::STORAGE_ROOT, "storage/app".into()),
-        )),
+        FilesystemDriver::Local => {
+            Ok(Storage::local(settings.get_or(config::keys::STORAGE_ROOT, "storage/app".into())))
+        }
 
         FilesystemDriver::Memory => Ok(Storage::memory()),
 

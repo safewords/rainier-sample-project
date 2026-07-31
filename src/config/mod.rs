@@ -76,13 +76,13 @@ pub mod hashing;
 pub mod kafka;
 pub mod keys;
 pub mod mail;
-pub mod queue;
-pub mod storage;
 pub mod metrics;
 pub mod openapi;
 pub mod posts;
+pub mod queue;
 pub mod server;
 pub mod session;
+pub mod storage;
 pub mod telemetry;
 
 /// Apply every configuration section.

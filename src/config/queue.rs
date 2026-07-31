@@ -16,10 +16,7 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     // A `QueueDriver`, not a string: `QUEUE_DRIVER=databse` fails here
     // listing the valid values, rather than silently running jobs inline
     // while everybody believes a worker has them.
-    config.set(
-        keys::QUEUE_DRIVER,
-        env.setting_or("QUEUE_DRIVER", QueueDriver::Sync)?,
-    )?;
+    config.set(keys::QUEUE_DRIVER, env.setting_or("QUEUE_DRIVER", QueueDriver::Sync)?)?;
 
     // The queue a job goes on when it does not name one.
     config.set(keys::QUEUE_DEFAULT, env.string("QUEUE_DEFAULT", "default"))?;
@@ -39,10 +36,7 @@ mod tests {
         let config = Config::new();
         configure(&config, &Env::new()).unwrap();
 
-        assert_eq!(
-            config.setting(keys::QUEUE_DRIVER).unwrap(),
-            QueueDriver::Sync
-        );
+        assert_eq!(config.setting(keys::QUEUE_DRIVER).unwrap(), QueueDriver::Sync);
         assert_eq!(config.get(keys::QUEUE_DEFAULT).as_deref(), Some("default"));
     }
 

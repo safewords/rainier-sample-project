@@ -15,10 +15,7 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     // application inherits a database a PHP application filled — `php` is a
     // migration position, not a destination, and the closed set means a
     // misspelling stops the boot rather than writing rows nothing can read.
-    config.set(
-        APP_CIPHER,
-        env.setting_or("APP_CIPHER", CryptScheme::Native)?,
-    )?;
+    config.set(APP_CIPHER, env.setting_or("APP_CIPHER", CryptScheme::Native)?)?;
 
     // `APP_ENV` is already parsed into an `AppEnv` by the framework. Reading it
     // back as the enum is what lets the rest of the application ask a question

@@ -19,10 +19,7 @@ use crate::config::keys::{
 pub fn configure(config: &Config, env: &Env) -> Result<()> {
     // A `FilesystemDriver`, not a string — `STORAGE_DRIVER=s3` without the
     // feature fails at boot naming it, and a misspelling lists the set.
-    config.set(
-        STORAGE_DRIVER,
-        env.setting_or("STORAGE_DRIVER", FilesystemDriver::Local)?,
-    )?;
+    config.set(STORAGE_DRIVER, env.setting_or("STORAGE_DRIVER", FilesystemDriver::Local)?)?;
 
     config.set(STORAGE_ROOT, env.string("STORAGE_ROOT", "storage/app"))?;
 
@@ -48,10 +45,7 @@ mod tests {
         let config = Config::new();
         configure(&config, &Env::new()).unwrap();
 
-        assert_eq!(
-            config.setting(STORAGE_DRIVER).unwrap(),
-            FilesystemDriver::Local
-        );
+        assert_eq!(config.setting(STORAGE_DRIVER).unwrap(), FilesystemDriver::Local);
         assert_eq!(config.get(STORAGE_ROOT).as_deref(), Some("storage/app"));
     }
 
