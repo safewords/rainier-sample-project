@@ -233,14 +233,16 @@ And cargo cannot flip them on by itself: features are resolved **before**
 anything compiles, they are additive-only, and a build script cannot add one.
 "The compiler sees `MAIL_DRIVER=smtp` and enables `mail-smtp`" is not a thing
 cargo can do. What it *can* do is be told — so the feature list is computed
-rather than hand-maintained:
+rather than hand-maintained, by the framework's own tool:
 
 ```sh
-cargo xtask features                       # what .env implies, with reasons
-cargo xtask features --env .env.build
-cargo xtask features --env .env.build --list   # bare list, for scripts
-cargo xtask features --check               # CI: fail on a selection nothing forwards
-cargo xtask build --env .env.build --release
+cargo install cargo-rainier   --git https://github.com/safewords/rainier-framework   # once
+
+cargo rainier features                       # what .env implies, with reasons
+cargo rainier features --env .env.build
+cargo rainier features --env .env.build --list   # bare list, for scripts
+cargo rainier features --check               # CI: fail on a selection nothing forwards
+cargo rainier build --env .env.build --release
 ```
 
 An environment file is **required** — an explicit `--env`, or `.env`. There
@@ -252,9 +254,10 @@ the deployment, silently. Preview against the defaults with
 The logic is the framework's `rainier-features` crate — the driver→feature
 mapping is knowledge about Rainier, and its tests there walk every driver
 enum so a new driver learns its feature in the same commit that adds it.
-`xtask` is a thin workspace door to it (no globally installed tool);
-`cargo install cargo-rainier` gives the same commands anywhere as
-`cargo rainier features` / `cargo rainier build`. It reads the two honest
+This application deliberately carries **no tool of its own**: the Dockerfile
+installs `cargo-rainier` pinned to the same framework revision the lockfile
+pins, so the mapping an image is sized with is the one the code compiles
+against. It reads the two honest
 sources — the deployment's environment file for every runtime driver
 selection, and the source tree for the compile-time choices (`Jwt`, the
 `Http` facade) — and emits the minimal
@@ -272,7 +275,7 @@ application never wired — is an error rather than a silently smaller list,
 and `--check` turns it into a failing CI step. When the framework grows a
 driver, the compiler already points at every `match` arm that must learn it —
 and `rainier-features`' own tests point at the mapping table, in the same
-repository.
+repository as the driver.
 
 ## Going to production
 

@@ -3103,11 +3103,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rainier-features"
-version = "2.0.0"
-source = "git+https://github.com/safewords/rainier-framework.git#cd59ef48e6194629e112f0d570764b836d519ae9"
-
-[[package]]
 name = "rainier-filesystem"
 version = "2.0.0"
 source = "git+https://github.com/safewords/rainier-framework.git#cd59ef48e6194629e112f0d570764b836d519ae9"
@@ -5389,13 +5384,6 @@ name = "xmlparser"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
-
-[[package]]
-name = "xtask"
-version = "0.1.0"
-dependencies = [
- "rainier-features",
-]
 
 [[package]]
 name = "yansi"

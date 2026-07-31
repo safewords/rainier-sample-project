@@ -33,11 +33,6 @@ tracing = "0.1"
 # without the feature, the driver falls back to memory with a warning rather
 # than failing, because a cache is the one dependency an app should be able to
 # lose.
-# The application is also a tiny workspace: `xtask` is the dev-tool that
-# computes the feature set a deployment needs (`cargo xtask features`).
-[workspace]
-members = [".", "xtask"]
-
 [features]
 default = []
 redis = ["rainier-framework/redis"]

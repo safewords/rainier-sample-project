@@ -35,47 +35,46 @@ WORKDIR /build
 # The default requires the file to exist, deliberately: an image sized
 # without the deployment's selections would be sized wrong — the example's
 # defaults would ship a log-mail, memory-cache binary — so a missing file
-# fails the next COPY instead of shipping a documentation-shaped image.
+# fails its COPY instead of shipping a documentation-shaped image.
 ARG ENV_FILE=.env.build
 
-# Manifests for both workspace members, and the xtask's (tiny) source: the
-# feature computation runs before anything heavy so its answer can shape the
-# cached dependency layer too. Stub sources stand in for the application so
-# cargo can read the workspace without rebuilding three hundred crates every
-# time `src/` changes.
-COPY Cargo.toml Cargo.lock ./
-COPY xtask/Cargo.toml xtask/Cargo.toml
-COPY xtask/src xtask/src
-COPY ${ENV_FILE} .env.build
+# The sizing tool, pinned to the same framework revision the application's
+# lockfile pins — so the driver→feature mapping the image is sized with is
+# the one the application compiles against. This layer re-runs only when
+# that revision moves.
+COPY Cargo.lock ./
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    REV=$(sed -n 's|^source = "git+https://github.com/safewords/rainier-framework.git#\(.*\)"|\1|p' Cargo.lock | head -n1) \
+ && cargo install cargo-rainier --locked \
+      --git https://github.com/safewords/rainier-framework.git --rev "$REV"
 
-RUN mkdir -p src \
- && echo 'fn main() {}' > src/main.rs \
- && echo '' > src/lib.rs
-
-# Compute the feature set once, from the selections. `--list` is the
-# scripting mode: the bare comma-separated set, and a selection nothing
-# forwards fails the build here, loudly.
-RUN cargo run --quiet --locked --package xtask -- features --env .env.build --list > .features \
- && echo "sized with features: [$(cat .features)]"
-
-# Dependencies, in their own layer, with the *right* features — so the cache
-# holds what the real build needs rather than a default set it rebuilds over.
-RUN FEATURES="$(cat .features)" \
- && cargo build --release --locked --package app --no-default-features \
-        ${FEATURES:+--features "$FEATURES"} \
- && rm -rf src
-
+COPY Cargo.toml ./
 COPY src ./src
 COPY resources ./resources
+COPY ${ENV_FILE} .env.build
 
-# `touch` because the stub above left cargo's fingerprint newer than the real
-# sources it just replaced, and cargo would otherwise decide there is nothing
-# to do and ship the stub.
-RUN touch src/main.rs src/lib.rs \
- && FEATURES="$(cat .features)" \
- && cargo build --release --locked --package app --no-default-features \
+# Compute the feature set — after the real sources are present, because the
+# set includes what the code reaches for (`Jwt`, the `Http` facade), not only
+# what the environment selects. `--list` is the scripting mode: the bare
+# comma-separated set, and a selection nothing forwards fails the build here,
+# loudly.
+RUN cargo rainier features --env .env.build --list > .features \
+ && echo "sized with features: [$(cat .features)]"
+
+# BuildKit cache mounts do what a stub-crate dance used to: the registry and
+# target caches persist across builds, so a source-only change recompiles the
+# application rather than three hundred dependencies — without a fake
+# `main.rs` that can be shipped by fingerprint accident. The binary is copied
+# out because a cache mount is not part of the layer.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/build/target \
+    FEATURES="$(cat .features)" \
+ && cargo build --release --locked --no-default-features \
         ${FEATURES:+--features "$FEATURES"} \
- && strip target/release/app
+ && strip target/release/app \
+ && cp target/release/app /usr/local/bin/app
 
 # --- runtime -----------------------------------------------------------------
 
@@ -95,7 +94,7 @@ RUN useradd --system --create-home --uid 10001 rainier
 
 WORKDIR /app
 
-COPY --from=builder /build/target/release/app /usr/local/bin/app
+COPY --from=builder /usr/local/bin/app /usr/local/bin/app
 COPY --from=builder /build/resources ./resources
 
 # The framework writes here: `storage/logs`, `storage/mail` for the file mail
