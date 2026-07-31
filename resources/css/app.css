@@ -1,0 +1,22 @@
+/* The application stylesheet — `@vite('resources/css/app.css')` in the
+ * layout resolves this to its content-hashed build, or serves it hot from
+ * the dev server. The layout keeps a copy of these rules inline as its
+ * no-build fallback, so this file is authoritative once Vite runs. */
+
+body {
+    font-family: system-ui, sans-serif;
+    max-width: 44rem;
+    margin: 4rem auto;
+    padding: 0 1rem;
+    line-height: 1.6;
+}
+
+article {
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+}
+
+a {
+    color: #0b5;
+}

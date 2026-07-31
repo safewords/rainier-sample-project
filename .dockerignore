@@ -15,6 +15,13 @@
 # travels into the build.
 .env
 *.sqlite
+
+# The assets stage runs `npm ci` itself; the context needs the lockfile, not
+# the tree. `public/build` is built inside the image; a local build (or a
+# stale `public/hot`) must not leak in.
+node_modules
+public/build
+public/hot
 *.sqlite-journal
 /storage/logs/*
 /storage/mail/*

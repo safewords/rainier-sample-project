@@ -4,11 +4,16 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>@yield('title')</title>
+    <!-- The inline rules are the no-build fallback: without `npm run dev` or
+         `npm run build`, @@vite renders only a comment saying so, and these
+         keep the page presentable. Once Vite runs, resources/css/app.css (the
+         same rules, authoritative) loads after and wins. -->
     <style>
         body { font-family: system-ui, sans-serif; max-width: 44rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.6; }
         article { border-bottom: 1px solid #ddd; padding-bottom: 1rem; margin-bottom: 1rem; }
         a { color: #0b5; }
     </style>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body>
     <header><h1>@yield('title')</h1></header>

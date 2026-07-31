@@ -18,7 +18,7 @@ use rainier_framework::session::{
     CacheSessionStore, CookieSessionStore, DatabaseSessionStore, MemorySessionStore, SessionConfig,
     SessionManager, SessionStore,
 };
-use rainier_framework::view::TemplateEngine;
+use rainier_framework::view::{TemplateEngine, Vite};
 
 use crate::app::http::kernel;
 use crate::app::providers::{AppServiceProvider, EventServiceProvider, RepositoryServiceProvider};
@@ -112,10 +112,18 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         .with_instance(storage(&settings).await?)
         .with_views(Arc::new(
             // Templates are re-read on every render outside production, so an
-            // edit shows up without a restart.
+            // edit shows up without a restart. The Vite resolver rides along
+            // for the layout's `@vite` — over `public`, where `npm run dev`
+            // writes `hot` and `npm run build` writes `build/manifest.json`.
+            // (The framework's *default* engine attaches one itself; an
+            // application supplying its own engine attaches its own.)
             match mode {
-                Mode::Running => TemplateEngine::new("resources/views"),
-                Mode::Testing => TemplateEngine::new("resources/views").without_cache(),
+                Mode::Running => {
+                    TemplateEngine::new("resources/views").with_vite(Vite::new("public"))
+                }
+                Mode::Testing => TemplateEngine::new("resources/views")
+                    .without_cache()
+                    .with_vite(Vite::new("public").without_cache()),
             },
         ))
         .with_database(database.clone())

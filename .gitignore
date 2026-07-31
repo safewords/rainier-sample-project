@@ -5,6 +5,13 @@
 # Local configuration and secrets
 .env
 
+# Frontend: dependencies and Vite's output. `public/hot` is the dev server's
+# marker and must never be committed — a stale one points every page at a
+# dev server that is gone.
+/node_modules
+/public/build
+/public/hot
+
 # Runtime output
 /storage/logs/*
 !/storage/logs/.gitkeep

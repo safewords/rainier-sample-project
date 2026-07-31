@@ -76,6 +76,21 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && strip target/release/app \
  && cp target/release/app /usr/local/bin/app
 
+# --- assets ------------------------------------------------------------------
+
+# The Vite build, in its own stage so the Rust cache and the npm cache never
+# invalidate each other. What comes out is `public/build` — content-hashed
+# files plus the manifest the `@vite` directive resolves entries against.
+FROM node:22-bookworm-slim AS assets
+
+WORKDIR /build
+
+COPY package.json package-lock.json vite.config.js ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+COPY resources ./resources
+RUN npm run build
+
 # --- runtime -----------------------------------------------------------------
 
 # Debian slim rather than distroless or Alpine. Slim keeps the glibc the build
@@ -96,6 +111,9 @@ WORKDIR /app
 
 COPY --from=builder /usr/local/bin/app /usr/local/bin/app
 COPY --from=builder /build/resources ./resources
+# The compiled frontend, served by the `/build/{path*}` route and resolved by
+# `@vite` through its manifest.
+COPY --from=assets /build/public/build ./public/build
 
 # The framework writes here: `storage/logs`, `storage/mail` for the file mail
 # transport, `storage/app` for the local filesystem disk. `/data` is separate

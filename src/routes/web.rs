@@ -2,12 +2,16 @@
 
 use rainier_framework::prelude::*;
 
-use crate::app::http::controllers::{auth_controller, home_controller};
+use crate::app::http::controllers::{asset_controller, auth_controller, home_controller};
 use crate::app::http::kernel;
 
 /// Declare the web routes.
 pub fn routes(router: &mut Router) {
     router.get("/", home_controller::index).name("home");
+
+    // Vite's build output. Outside `kernel::web()` on purpose — a hashed
+    // asset needs no session — and a 404 until `npm run build` has run.
+    router.get("/build/{path*}", asset_controller::build).name("assets.build");
     router.get("/health", home_controller::health).name("health");
     router.get("/health/version", home_controller::version).name("health.version");
 

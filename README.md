@@ -216,6 +216,34 @@ Generate a key with `cargo run -- key:generate`. Without one a random key is
 minted per boot, which works and silently invalidates everything the last boot
 encrypted — so it warns.
 
+## Frontend assets
+
+Vite, the way a PHP framework wires it — and entirely optional: `cargo run`
+works before npm ever has. `resources/js` and `resources/css` are source; the layout names
+them with a directive:
+
+```html
+@vite(['resources/css/app.css', 'resources/js/app.js'])
+```
+
+```sh
+npm install
+npm run dev     # hot reload: writes public/hot, @vite points at the dev server
+npm run build   # compiles public/build + manifest.json, @vite emits hashed URLs
+```
+
+With neither running, `@vite` renders an HTML comment saying which command to
+run and the page arrives unstyled rather than down — the layout keeps a small
+inline fallback so it stays presentable.
+
+The pieces, each small enough to read: `vite.config.js` (the entries, the
+manifest, and a ~20-line inline plugin that maintains `public/hot`),
+`asset_controller` (serves `public/build` under `/build/{path*}`,
+traversal-safe, `immutable`-cached — Rainier is the web server, so the built
+files need a route), and the Dockerfile's `assets` stage (the image compiles
+its own bundle; nothing built locally leaks in). The framework side is
+documented in the framework's `docs/vite.md`.
+
 ## Sizing the binary
 
 Every subsystem a deployment does not use is a cargo feature it does not
