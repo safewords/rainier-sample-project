@@ -5,7 +5,9 @@ edition = "2021"
 publish = false
 description = "Dev tooling: `cargo xtask features` computes the cargo features a deployment needs."
 
-# Deliberately no dependencies. This parses an env file and greps source for
-# a handful of markers; pulling a parser crate in for that would make the
-# tool that trims the dependency tree a growth on it.
+# The logic is the framework's — `rainier-features` pins the driver→feature
+# mapping against the real driver enums, so it cannot drift from here. This
+# crate is the workspace door to it; `cargo install cargo-rainier` is the
+# standalone one.
 [dependencies]
+rainier-features = { git = "https://github.com/safewords/rainier-framework.git" }

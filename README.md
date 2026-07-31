@@ -242,9 +242,15 @@ cargo xtask features --check               # CI: fail on a selection nothing for
 cargo xtask build --env .env.production --release
 ```
 
-`xtask` reads the two honest sources — the deployment's environment file for
-every runtime driver selection, and the source tree for the compile-time
-choices (`Jwt`, the `Http` facade) — and emits the minimal
+The logic is the framework's `rainier-features` crate — the driver→feature
+mapping is knowledge about Rainier, and its tests there walk every driver
+enum so a new driver learns its feature in the same commit that adds it.
+`xtask` is a thin workspace door to it (no globally installed tool);
+`cargo install cargo-rainier` gives the same commands anywhere as
+`cargo rainier features` / `cargo rainier build`. It reads the two honest
+sources — the deployment's environment file for every runtime driver
+selection, and the source tree for the compile-time choices (`Jwt`, the
+`Http` facade) — and emits the minimal
 `--no-default-features --features "…"` invocation:
 
 ```text
@@ -257,9 +263,9 @@ cargo build --release --no-default-features --features "mail-smtp,redis"
 A selection nothing forwards — `CACHE_DRIVER=dynamodb`, which this
 application never wired — is an error rather than a silently smaller list,
 and `--check` turns it into a failing CI step. When the framework grows a
-driver, the compiler already points at every `match` arm that must learn it;
-the mapping table in `xtask/src/main.rs` is one more such place, and the
-comment at the top of it says so.
+driver, the compiler already points at every `match` arm that must learn it —
+and `rainier-features`' own tests point at the mapping table, in the same
+repository.
 
 ## Going to production
 
