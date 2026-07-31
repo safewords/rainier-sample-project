@@ -140,6 +140,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
 
+      # The Dockerfile refuses to size a build without an env file, and the
+      # repo deliberately does not commit one. CI builds the default-sized
+      # image: driver selections only, never secrets — this file enters the
+      # builder layers and the build cache.
+      - name: write the sizing env file
+        run: |
+          printf 'CACHE_DRIVER=memory\nMAIL_DRIVER=log\n' > .env.build
+
       - uses: docker/build-push-action@v6
         with:
           context: .
