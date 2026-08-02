@@ -149,7 +149,11 @@ mod tests {
             keys::QUEUE_DRIVER.path(),
             keys::HASH_DRIVER.path(),
             rainier_framework::keys::MAIL_DRIVER.path(),
-            keys::STORAGE_DRIVER.path(),
+            // The whole `filesystems` section, not a `storage.driver` scalar.
+            // There is no single storage driver any more: each declared disk
+            // names its own, which is what lets two of them sit on two
+            // services.
+            rainier_framework::keys::FILESYSTEMS.path(),
             keys::KAFKA_BROKERS.path(),
             keys::POSTS_PER_PAGE.path(),
             keys::SERVER_REQUEST_TIMEOUT_SECS.path(),
@@ -170,7 +174,11 @@ mod tests {
             ("SESSION_DRIVER=redis", "SESSION_DRIVER", "`cookie`"),
             ("QUEUE_DRIVER=databse", "QUEUE_DRIVER", "`database`"),
             ("HASH_DRIVER=argon2", "HASH_DRIVER", "`argon2id`"),
-            ("STORAGE_DRIVER=r2", "STORAGE_DRIVER", "`s3`"),
+            // `STORAGE_DRIVER=r2` was here. It is gone because the variable
+            // is: a disk names its own driver in the `filesystems` section,
+            // so there is no single storage driver left to misspell. The
+            // equivalent protection moved with it — an unknown driver in a
+            // disk declaration is refused where the declaration is read.
             ("APP_CIPHER=laravel", "APP_CIPHER", "`php`"),
         ];
 

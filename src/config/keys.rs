@@ -47,28 +47,15 @@ config_keys! {
 
     // --- storage -------------------------------------------------------------
     //
-    // The framework's `Storage` takes a built filesystem rather than reading
-    // configuration, so the section is this application's — the same reason
-    // `posts.*` is.
-
-    /// Where uploaded files live: `local`, `memory`, or `s3`.
-    pub STORAGE_DRIVER: rainier_framework::filesystem::FilesystemDriver = "storage.driver";
-
-    /// The directory the `local` driver writes under.
-    pub STORAGE_ROOT: String = "storage.root";
-
-    /// The `s3` bucket.
-    pub STORAGE_BUCKET: String = "storage.bucket";
-
-    /// Its region. Empty defers to the SDK's own resolution.
-    pub STORAGE_REGION: String = "storage.region";
-
-    /// A custom endpoint — what points the same driver at Cloudflare R2 or
-    /// MinIO instead of AWS. Empty means AWS's own.
-    pub STORAGE_ENDPOINT: String = "storage.endpoint";
-
-    /// The public URL prefix objects are reachable at, when there is one.
-    pub STORAGE_URL_PREFIX: String = "storage.url_prefix";
+    // Nothing here any more. Storage used to be six scalars in this
+    // application's own namespace — one driver, one bucket, one region, one
+    // endpoint — because the framework's `Storage` took a built filesystem
+    // rather than reading configuration.
+    //
+    // It reads `rainier_framework::keys::FILESYSTEMS` now: a default disk plus
+    // a map of declarations, each naming its own driver and settings. Six
+    // scalars could describe exactly one disk, which is the shape that cannot
+    // express a second one on another service — see `config/storage.rs`.
 }
 
 // The framework's keys — `APP_NAME`, `CACHE_DRIVER`, `SESSION_LIFETIME`, and

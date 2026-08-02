@@ -106,10 +106,11 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
             }
         })
         .with_sessions(sessions(&env, &database)?)
-        // Uploaded files. Local by default; `STORAGE_DRIVER=s3` (behind the
-        // `s3` cargo feature) reaches AWS, R2, MinIO — anything that speaks
-        // the API.
-        .with_instance(storage(&settings).await?)
+        // Uploaded files are *not* wired here. `config/storage.rs` declares
+        // the disks and the framework builds them — see the note where this
+        // application's own `storage()` builder used to be. Calling
+        // `with_instance` with a `Storage` would silently win over every
+        // declared disk.
         .with_views(Arc::new(
             // Templates are re-read on every render outside production, so an
             // edit shows up without a restart. The Vite resolver rides along
@@ -330,68 +331,18 @@ fn missing_feature(driver: CacheDriver) -> Error {
     }
 }
 
-/// Build the file storage from `config/storage.rs`.
-///
-/// In `bootstrap` rather than a provider because the S3 arm resolves a
-/// credential chain, which is async — the same reason a connecting
-/// broadcaster lives here.
-async fn storage(settings: &Config) -> Result<rainier_framework::filesystem::Storage> {
-    use rainier_framework::filesystem::{FilesystemDriver, Storage};
-
-    match settings.setting(config::keys::STORAGE_DRIVER)? {
-        FilesystemDriver::Local => {
-            Ok(Storage::local(settings.get_or(config::keys::STORAGE_ROOT, "storage/app".into())))
-        }
-
-        FilesystemDriver::Memory => Ok(Storage::memory()),
-
-        FilesystemDriver::S3 => {
-            #[cfg(feature = "s3")]
-            {
-                use rainier_framework::drivers::AwsConnector;
-                use rainier_framework::filesystem::S3Filesystem;
-
-                let bucket = settings.get_or(config::keys::STORAGE_BUCKET, String::new());
-                if bucket.is_empty() {
-                    return Err(Error::internal(
-                        "STORAGE_DRIVER=s3 needs STORAGE_BUCKET to name the bucket",
-                    ));
-                }
-
-                // The default credential chain, pinned to a region when one
-                // is named. An endpoint is what points the same driver at R2
-                // or MinIO instead of AWS.
-                let region = settings.get_or(config::keys::STORAGE_REGION, String::new());
-                let mut connector = if region.is_empty() {
-                    AwsConnector::from_env().await
-                } else {
-                    AwsConnector::in_region(region).await
-                };
-
-                let endpoint = settings.get_or(config::keys::STORAGE_ENDPOINT, String::new());
-                if !endpoint.is_empty() {
-                    connector = connector.endpoint(endpoint);
-                }
-
-                let mut disk = S3Filesystem::new(&connector, bucket);
-
-                let prefix = settings.get_or(config::keys::STORAGE_URL_PREFIX, String::new());
-                if !prefix.is_empty() {
-                    disk = disk.with_url_prefix(prefix);
-                }
-
-                Ok(Storage::new(std::sync::Arc::new(disk)))
-            }
-            #[cfg(not(feature = "s3"))]
-            {
-                Err(Error::internal(
-                    "STORAGE_DRIVER=s3 needs the `s3` cargo feature, which this build does not \
-                     have",
-                ))
-            }
-        }
-    }
-}
+// There is no `storage()` builder here any more, and its absence is the point.
+//
+// It used to read one driver and one set of connection settings and hand the
+// result to `with_instance`. Two things were wrong with that. It could describe
+// only a single disk, so an application wanting a second one on another service
+// had nowhere to say so. And supplying storage explicitly *overrides* the
+// declared `filesystems` section, so an application that declared disks and
+// also called this got the single disk and no error about the rest.
+//
+// `config/storage.rs` now declares what exists and the framework builds each
+// disk from its own settings. Everything this function did is still done —
+// including resolving a credential chain asynchronously — just not here.
 
 /// Open the database.
 ///
