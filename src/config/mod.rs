@@ -143,7 +143,10 @@ mod tests {
 
         for key in [
             keys::APP_NAME.path(),
-            keys::DATABASE_URL.path(),
+            // The whole `databases` section, not a `database.url` scalar. One
+            // DSN still configures one database — it declares the default
+            // connection — but a scalar cannot describe the second one.
+            rainier_framework::keys::DATABASES.path(),
             keys::SESSION_DRIVER.path(),
             keys::CACHE_DRIVER.path(),
             keys::QUEUE_DRIVER.path(),
