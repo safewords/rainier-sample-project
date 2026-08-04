@@ -10,7 +10,7 @@ use rainier_framework::events::Dispatcher;
 use rainier_framework::prelude::*;
 
 use crate::app::models::Tag;
-use crate::app::repositories::{PostRepository, UserRepository};
+use crate::app::repositories::{PostRepository, TagRepository, UserRepository};
 
 /// Binds one repository per model.
 pub struct RepositoryServiceProvider {
@@ -39,11 +39,19 @@ impl ServiceProvider for RepositoryServiceProvider {
         let db = self.database.clone();
         app.singleton(move |_: &Container| Ok(UserRepository::new(db.clone())));
 
-        // Tags need no queries of their own: a relationship loads them, and
-        // `EntityRepository` is already every CRUD method. Wrapping it in a
-        // `TagRepository` that added nothing would be ceremony.
+        // The bare `EntityRepository<Tag>`, still bound: a relationship loads
+        // through the contract, and `Post::tags().load(..)` wants that one
+        // rather than a newtype around it.
         let db = self.database.clone();
         app.singleton(move |_: &Container| Ok(EntityRepository::<Tag>::new(db.clone())));
+
+        // And a newtype beside it, which this comment used to say would be
+        // ceremony. It is not, any more: the tag cloud is a `GROUP BY` over the
+        // `post_tag` pivot, and attaching a tag is an upsert on a two-column
+        // conflict target. Neither is CRUD over `tags`, and neither belonged in
+        // a controller.
+        let db = self.database.clone();
+        app.singleton(move |_: &Container| Ok(TagRepository::new(db.clone())));
 
         Ok(())
     }
@@ -52,7 +60,8 @@ impl ServiceProvider for RepositoryServiceProvider {
 /// The `Arc` the container hands back, spelled out because the closures above
 /// are the only place the concrete types appear.
 #[allow(dead_code, reason = "documentation of the bound types")]
-type Bound = (Arc<PostRepository>, Arc<UserRepository>, Arc<EntityRepository<Tag>>);
+type Bound =
+    (Arc<PostRepository>, Arc<UserRepository>, Arc<EntityRepository<Tag>>, Arc<TagRepository>);
 
 #[cfg(test)]
 mod tests {
@@ -71,6 +80,7 @@ mod tests {
         assert!(app.resolve::<PostRepository>().is_ok());
         assert!(app.resolve::<UserRepository>().is_ok());
         assert!(app.resolve::<EntityRepository<Tag>>().is_ok());
+        assert!(app.resolve::<TagRepository>().is_ok());
     }
 
     #[test]

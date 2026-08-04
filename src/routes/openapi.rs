@@ -68,10 +68,33 @@ pub fn document() -> OpenApi {
         .describe(
             "api.posts.destroy",
             Endpoint::new()
-                .summary("Delete your own post")
+                .summary("Move your own post to the bin")
+                .description(
+                    "A soft delete: the post stops appearing anywhere, and \
+                     `/api/posts/{post}/restore` brings it back.",
+                )
                 .tag("Posts")
-                .returns(204, "Deleted")
+                .returns(204, "Binned")
                 .returns(403, "Not your post"),
+        )
+        .describe(
+            "api.posts.trashed",
+            Endpoint::new()
+                .summary("What you have in the bin")
+                .tag("Posts")
+                .returns(200, "Your binned posts, most recently binned first"),
+        )
+        .describe(
+            "api.posts.restore",
+            Endpoint::new()
+                .summary("Take one of your posts back out of the bin")
+                .description(
+                    "It comes back as it was, published flag included. A slug that is not \
+                     yours and one that does not exist answer the same 404.",
+                )
+                .tag("Posts")
+                .returns(200, "The slug that was restored")
+                .returns(404, "Nothing of yours in the bin under that slug"),
         )
         .describe(
             "api.notifications.index",

@@ -9,10 +9,10 @@
 //!   mod.rs        the entry point, calling each section
 //!   keys.rs       every key this application names
 //!   app.rs        the application's name, environment, URL, cipher
-//!   database.rs   the one URL persistence hangs on
+//!   database.rs   every database connection, and which is the default
 //!   session.rs    the session driver and cookie
-//!   cache.rs      the cache driver and prefix
-//!   queue.rs      where dispatched jobs wait
+//!   cache.rs      every cache store, and which is the default
+//!   queue.rs      every queue connection, and which is the default
 //!   hashing.rs    which algorithm passwords are written with
 //!   mail.rs       the mail driver, and everything each transport needs
 //!   storage.rs    where uploaded files live
@@ -38,8 +38,8 @@
 //! of options is an enum:
 //!
 //! ```ignore
-//! config.set(CACHE_DRIVER, env.setting::<CacheDriver>("CACHE_DRIVER")?)?;
-//! //         ^ a Key<CacheDriver>       ^ fails on anything outside the set
+//! config.set(SESSION_DRIVER, env.setting::<SessionDriver>("SESSION_DRIVER")?)?;
+//! //         ^ a Key<SessionDriver>       ^ fails on anything outside the set
 //! ```
 //!
 //! Which turns three classes of mistake into something that happens at the
@@ -47,9 +47,14 @@
 //!
 //! | Mistake | Before | Now |
 //! |---|---|---|
-//! | `config.set("cache.drivers", …)` | writes where nothing reads | does not compile |
+//! | `config.set("session.drivers", …)` | writes where nothing reads | does not compile |
 //! | `config.get::<String>("posts.per_page")` | `None`, then a fallback everywhere | does not compile |
-//! | `CACHE_DRIVER=redys` | boots on an in-process cache | fails the boot, listing the options |
+//! | `SESSION_DRIVER=redys` | boots on an in-process store | fails the boot, listing the options |
+//!
+//! The four **sections** — `filesystems`, `databases`, `queues`, `cache.stores`
+//! — go one step further than a typed key. Each entry names its own driver with
+//! a constructor rather than a string, so the misspelling above is not a value
+//! that fails at boot. It is one that does not compile.
 //!
 //! [`Key<T>`]: rainier_framework::config::Key
 //!
@@ -148,8 +153,13 @@ mod tests {
             // connection — but a scalar cannot describe the second one.
             rainier_framework::keys::DATABASES.path(),
             keys::SESSION_DRIVER.path(),
-            keys::CACHE_DRIVER.path(),
-            keys::QUEUE_DRIVER.path(),
+            // The whole `cache.stores` and `queues` sections, not a
+            // `cache.driver` / `queue.driver` scalar. Both variables are gone
+            // from this application for the reason `STORAGE_DRIVER` is: a
+            // scalar names one backend, and the framework refuses it beside a
+            // section rather than letting one of the two silently lose.
+            rainier_framework::keys::CACHE_STORES.path(),
+            rainier_framework::keys::QUEUES.path(),
             keys::HASH_DRIVER.path(),
             rainier_framework::keys::MAIL_DRIVER.path(),
             // The whole `filesystems` section, not a `storage.driver` scalar.
@@ -173,15 +183,19 @@ mod tests {
         // The property the whole typed-config layer exists for. Before it,
         // every one of these booted happily on the default driver.
         let cases = [
-            ("CACHE_DRIVER=redys", "CACHE_DRIVER", "`memcached`"),
             ("SESSION_DRIVER=redis", "SESSION_DRIVER", "`cookie`"),
-            ("QUEUE_DRIVER=databse", "QUEUE_DRIVER", "`database`"),
             ("HASH_DRIVER=argon2", "HASH_DRIVER", "`argon2id`"),
-            // `STORAGE_DRIVER=r2` was here. It is gone because the variable
-            // is: a disk names its own driver in the `filesystems` section,
-            // so there is no single storage driver left to misspell. The
-            // equivalent protection moved with it — an unknown driver in a
-            // disk declaration is refused where the declaration is read.
+            // `STORAGE_DRIVER=r2` was here, and `CACHE_DRIVER=redys` and
+            // `QUEUE_DRIVER=databse` have now followed it out for the same
+            // reason: the variables are gone. A disk, a store and a queue
+            // connection each name their own driver inside their section, so
+            // there is no single driver name left to misspell.
+            //
+            // The protection did not go with them, it moved earlier. A
+            // declaration names its driver with a constructor —
+            // `StoreConfig::memory()`, `ConnectionConfig::database()` — so
+            // `databse` is not a value that fails at boot, it is one that does
+            // not compile.
             ("APP_CIPHER=laravel", "APP_CIPHER", "`php`"),
         ];
 
@@ -200,9 +214,8 @@ mod tests {
     #[test]
     fn a_driver_reads_back_as_the_enum_it_was_written_as() {
         let config = Config::new();
-        configure(&config, &Env::parse("CACHE_DRIVER=memcached\nSESSION_DRIVER=cache")).unwrap();
+        configure(&config, &Env::parse("SESSION_DRIVER=cache")).unwrap();
 
-        assert_eq!(config.setting(keys::CACHE_DRIVER).unwrap(), CacheDriver::Memcached);
         assert_eq!(config.setting(keys::SESSION_DRIVER).unwrap(), SessionDriver::Cache);
     }
 }

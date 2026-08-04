@@ -9,7 +9,7 @@ use crate::app::repositories::PostRepository;
 /// `GET /` — the front page.
 pub async fn index() -> Result<Response> {
     let posts = resolve::<PostRepository>()?;
-    let recent = posts.published_page(1, 5, None).await?;
+    let recent = posts.published_page(1, 5, None, None).await?;
 
     let name: String = Config::instance().get_or("app.name", "Rainier".into());
 

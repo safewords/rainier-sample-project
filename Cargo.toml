@@ -15,7 +15,7 @@ rainier-framework = { git = "https://github.com/safewords/rainier-framework.git"
 
 # Cache and session drivers are opt-in, so a build only compiles the clients it
 # needs. Add "redis", "redis-cluster" or "memcached" to the features above to
-# make CACHE_DRIVER / SESSION_DRIVER=cache able to select them.
+# make the matching store in `config/cache.rs` buildable.
 
 # `#[derive(Entity)]` expands to `::rainier_orm::…`, an absolute path, so any
 # crate defining a model needs Rainier ORM as a direct dependency — the
@@ -29,10 +29,17 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 tracing = "0.1"
 
-# Cache and session drivers. Enable one to make CACHE_DRIVER able to select it;
-# without the feature, the driver falls back to memory with a warning rather
-# than failing, because a cache is the one dependency an app should be able to
-# lose.
+# Cache and session drivers. Enable one to make the matching store in
+# `config/cache.rs` buildable; a store naming a driver this build does not carry
+# is a **boot failure**, not a fallback.
+#
+# That is the opposite of what this comment used to say, and the reversal is
+# deliberate. "A cache is the one dependency an app should be able to lose" is
+# true of cached values and false of everything else the store carries: falling
+# back to an in-process cache gives you locks that hold within one replica,
+# a rate limiter that counts to its limit once per replica, and a session store
+# that signs people out as the load balancer moves them. None of it reports
+# anything.
 [features]
 default = []
 redis = ["rainier-framework/redis"]

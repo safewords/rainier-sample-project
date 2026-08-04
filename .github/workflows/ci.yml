@@ -90,10 +90,17 @@ jobs:
         with:
           key: ${{ matrix.name }}
 
-      # The feature combinations are here because the driver arms in
-      # `bootstrap::cache` are `#[cfg]`-gated, so a build without the feature
-      # never compiles them — which is exactly how `--features redis` stayed
-      # broken for a while without anybody noticing.
+      # The feature combinations used to be here because `bootstrap::cache`
+      # matched on a driver with a `#[cfg]`-gated arm per backend, so a build
+      # without the feature never compiled them — which is how `--features
+      # redis` stayed broken for a while without anybody noticing.
+      #
+      # Those arms are gone: `config/cache.rs` declares stores and the framework
+      # builds them, so there is no per-driver code in this application to break.
+      # The matrix stays because what it now proves is still worth proving —
+      # that the framework's feature combinations compile together against this
+      # application's own dependency graph, which is where a bad forward
+      # (`redis-cluster` without `redis`) would show up.
       - run: cargo clippy --all-targets ${{ matrix.flags }} -- -D warnings
       - run: cargo test ${{ matrix.flags }}
 

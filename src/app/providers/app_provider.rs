@@ -21,9 +21,6 @@ use rainier_framework::mail::{self, Mailer, MemoryTransport, Transport};
 use rainier_framework::notifications::DatabaseChannel;
 use rainier_framework::notify::MailChannel;
 use rainier_framework::prelude::*;
-use rainier_framework::queue::{
-    DatabaseQueue, JobRegistry, MemoryQueue, Queue as QueueContract, QueueManager, SyncQueue,
-};
 
 use crate::app::jobs::NotifyAuthor;
 use crate::app::models::{PostPublished, User};
@@ -49,7 +46,7 @@ impl ServiceProvider for AppServiceProvider {
         self.mail(app)?;
         self.broadcasting(app);
         self.notifications(app);
-        self.queue(app);
+        // No `self.queue(app)`. See the note at the bottom of this file.
 
         app.instance(migrations::all());
         Ok(())
@@ -75,7 +72,7 @@ impl ServiceProvider for AppServiceProvider {
         let locks = app.resolve::<rainier_framework::cache::LockManager>()?;
         if !locks.is_shared() {
             tracing::warn!(
-                "the cache is per-process, so `on_one_server` guarantees nothing — set CACHE_DRIVER to something shared before running the scheduler on more than one machine"
+                "the cache is per-process, so `on_one_server` guarantees nothing — set REDIS_URL, which declares the `shared` store in `config/cache.rs`, and point CACHE_STORE at it before running the scheduler on more than one machine"
             );
         }
 
@@ -89,17 +86,6 @@ impl ServiceProvider for AppServiceProvider {
         }
         Ok(())
     });
-}
-
-/// The queue driver exists but this build cannot construct it.
-///
-/// A different message from "unknown driver" on purpose: the fix is a cargo
-/// feature, not a spelling correction, and the message says which one.
-#[allow(dead_code, reason = "used only by the arms whose feature is off")]
-fn missing_queue_feature(driver: &str, feature: &str) -> Error {
-    Error::internal(format!(
-        "QUEUE_DRIVER={driver} needs the `{feature}` cargo feature, which this build does not have"
-    ))
 }
 
 /// Is the command being run one that manages migrations itself?
@@ -236,139 +222,36 @@ impl AppServiceProvider {
                 .with(MailChannel::new(container.resolve::<Mailer>()?)))
         });
     }
-
-    fn queue(&self, app: &Application) {
-        let database = self.database.clone();
-        let mode = self.mode;
-
-        // The container itself, for the sync driver — it runs jobs inline and
-        // therefore needs somewhere to resolve their dependencies from.
-        let container_handle = Arc::clone(app.container());
-
-        app.singleton(move |container: &Container| {
-            // Every job the worker must be able to run. A job missing from
-            // here fails at run time with "no job is registered as …", so add
-            // to this list whenever you add a job.
-            let registry = Arc::new(JobRegistry::new().with::<NotifyAuthor>());
-
-            let driver: Arc<dyn QueueContract> = match mode {
-                // In memory under test: a test wants a job *queued* so it can
-                // assert on it, not run under its feet.
-                Mode::Testing => Arc::new(MemoryQueue::new()),
-
-                // Whatever `QUEUE_DRIVER` names. Every arm a build carries is
-                // real; an arm whose cargo feature is missing fails here
-                // naming it — the difference between "the deployment asked
-                // for something this binary cannot do" and a queue that
-                // silently is not the one you asked for.
-                Mode::Running => {
-                    let config = container.resolve::<rainier_framework::config::Config>()?;
-
-                    match config.setting(crate::config::keys::QUEUE_DRIVER)? {
-                        // Inline: a failed job fails the request that
-                        // dispatched it. Right in development, wrong under
-                        // load — which is why it is the default and the docs
-                        // say so.
-                        QueueDriver::Sync => Arc::new(SyncQueue::new(
-                            Arc::clone(&registry),
-                            Arc::clone(&container_handle),
-                        )),
-
-                        QueueDriver::Memory => Arc::new(MemoryQueue::new()),
-
-                        // Two tables in the application's own database —
-                        // durable, shared, no new infrastructure. The usual
-                        // production answer, and its tables are already in
-                        // `database/migrations.rs`.
-                        QueueDriver::Database => Arc::new(DatabaseQueue::new(database.clone())),
-
-                        QueueDriver::Redis => {
-                            #[cfg(feature = "redis")]
-                            {
-                                use rainier_framework::drivers::RedisConnector;
-                                use rainier_framework::queue::RedisQueue;
-
-                                let url = config.get_or(
-                                    crate::config::keys::CACHE_REDIS_URL,
-                                    "redis://127.0.0.1:6379/".into(),
-                                );
-
-                                let queue = tokio::task::block_in_place(|| {
-                                    tokio::runtime::Handle::current().block_on(async {
-                                        RedisQueue::connect(&RedisConnector::open(&url)?).await
-                                    })
-                                })?;
-
-                                Arc::new(queue)
-                            }
-                            #[cfg(not(feature = "redis"))]
-                            {
-                                return Err(missing_queue_feature("redis", "redis"));
-                            }
-                        }
-
-                        QueueDriver::Sqs => {
-                            #[cfg(feature = "sqs")]
-                            {
-                                use rainier_framework::drivers::AwsConnector;
-                                use rainier_framework::queue::SqsQueue;
-
-                                let queue_url = config
-                                    .get_or(crate::config::keys::QUEUE_SQS_URL, String::new());
-
-                                let connector = tokio::task::block_in_place(|| {
-                                    tokio::runtime::Handle::current()
-                                        .block_on(AwsConnector::from_env())
-                                });
-
-                                Arc::new(SqsQueue::new(&connector, queue_url))
-                            }
-                            #[cfg(not(feature = "sqs"))]
-                            {
-                                return Err(missing_queue_feature("sqs", "sqs"));
-                            }
-                        }
-
-                        // A log is not a queue — read `rainier_queue::kafka`
-                        // before choosing this. The constructor refuses a
-                        // lock manager that is not shared, because the quiet
-                        // version of that mistake is every job running on
-                        // every machine.
-                        QueueDriver::Kafka => {
-                            #[cfg(feature = "kafka")]
-                            {
-                                use rainier_framework::kafka;
-
-                                let client = tokio::task::block_in_place(|| {
-                                    tokio::runtime::Handle::current()
-                                        .block_on(kafka::client(&config))
-                                })?;
-
-                                // An owned manager over the same store the
-                                // application's own locks use — the queue
-                                // constructor takes it by value, and what
-                                // matters is the store being shared.
-                                let locks =
-                                    container.resolve::<rainier_framework::cache::LockManager>()?;
-                                let locks = rainier_framework::cache::LockManager::new(Arc::clone(
-                                    locks.cache(),
-                                ));
-
-                                Arc::new(kafka::queue(&config, client, locks)?)
-                            }
-                            #[cfg(not(feature = "kafka"))]
-                            {
-                                return Err(missing_queue_feature("kafka", "kafka"));
-                            }
-                        }
-                    }
-                }
-            };
-
-            Ok(QueueManager::new(driver, registry))
-        });
-    }
 }
+
+// There is no `queue()` builder here any more, and its absence is the point —
+// the same point the missing `storage()` in `bootstrap.rs` makes, and it was
+// wrong here for one more reason.
+//
+// It read `QUEUE_DRIVER` out of the configuration and matched on it, arm by
+// `#[cfg]`-gated arm, to build one connection. Two things were wrong with that.
+//
+// It could describe only a single destination, so `config/queue.rs` declaring
+// `sync`, `database` and `bulk` had nowhere to land. And — this is the part
+// that made it a defect rather than a limitation — **a provider binding a
+// `QueueManager` silently wins over the declared section.** The framework
+// builds the section's connections at boot and binds them; providers register
+// afterwards, because a provider may legitimately resolve a queue. So the
+// section was built, its connections opened, and then thrown away by this
+// singleton.
+//
+// The failure that produced is the one `config/queue.rs` opens by describing:
+// `QUEUE_CONNECTION=database` declared the default, the framework built it, and
+// then every dispatch went inline through a `SyncQueue` anyway, because that is
+// what `QUEUE_DRIVER` defaulted to. Nothing errored. Jobs ran in the request
+// that dispatched them, and the only symptom was latency nobody attributed to a
+// queue that everybody believed existed.
+//
+// `config/queue.rs` now declares what exists and the framework builds each
+// connection from its own settings. The job *registry* moved with it, to
+// `Rainier::with_jobs` in `bootstrap.rs`, because registering jobs in a
+// provider does not reach the framework's queue either — for the same ordering
+// reason.
 
 /// `EventServiceProvider` — `app/Providers/EventServiceProvider.php`.
 ///

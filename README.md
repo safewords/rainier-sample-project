@@ -308,18 +308,44 @@ repository as the driver.
 ## Going to production
 
 - **Database.** Set `DATABASE_URL`. SQLite in memory is wiped on exit.
-- **Queue.** `QUEUE_DRIVER=sync` runs jobs inline, so a failed job fails the
-  request that dispatched it. Switch to the database driver (see the note in
-  `app/providers/app_provider.rs`) and run `cargo run -- queue:work`.
+- **Queue.** `QUEUE_CONNECTION=sync` runs jobs inline, so a failed job fails the
+  request that dispatched it. Switch to `database` and run
+  `cargo run -- queue:work`; `bulk` is a second connection on the same driver,
+  drained by its own workers. The connections are declared in
+  `config/queue.rs`.
 - **Mail.** `MAIL_DRIVER=log` writes to the log. `file` writes `.eml` files you
   can open in a browser.
 - **Sessions.** `SESSION_DRIVER=memory` is per-process. Pick one of:
   `database` (merge `DatabaseSessionStore::migrations()` into
-  `database/migrations/mod.rs`; never evicts), `cache` (Redis or Memcached, expires
-  itself, can evict), or `cookie` (no server state, and no way to revoke a
-  session). Set `SESSION_SECURE=true` whichever you choose.
-- **Cache.** `CACHE_DRIVER=redis` with `cargo build --features redis`, or
-  `redis-cluster` for a sharded cluster, or `memcached`.
+  `database/migrations/mod.rs`; never evicts), `cache` (one of the declared
+  cache stores, expires itself, can evict), or `cookie` (no server state, and no
+  way to revoke a session). Set `SESSION_SECURE=true` whichever you choose.
+- **Cache.** Set `REDIS_URL` and build with `--features redis`; point
+  `CACHE_STORE` at the `shared` store that declares. `SESSION_REDIS_URL`
+  declares a second store for sessions, which want the opposite eviction policy
+  from a cache. The stores are declared in `config/cache.rs`.
+
+> `CACHE_DRIVER`, `QUEUE_DRIVER` and `STORAGE_DRIVER` are **not** variables this
+> application reads. Each named a single backend, and each configuration section
+> declares several. Keep all three out of `.env`; they survive in exactly one
+> place, `.env.build`, which sizes the Docker image and never reaches the running
+> container.
+>
+> They do not fail the same way, which is worth knowing when you are cleaning up
+> an old `.env`:
+>
+> | Variable | In `.env` |
+> |---|---|
+> | `QUEUE_DRIVER` | boot failure — Rainier refuses it beside the `queues` section |
+> | `CACHE_DRIVER` | boot failure, refused by `config/cache.rs` itself |
+> | `STORAGE_DRIVER` | read by nothing at runtime; harmless, and does nothing |
+>
+> `CACHE_DRIVER` is the interesting one. Rainier's own refusal lives on the path
+> that builds the cache, and `bootstrap.rs` skips that path — it hands over a
+> built manager with `Rainier::with_cache` so sessions, locks and rate limits
+> share one store. That suppressed the guard, and a suppressed guard here means
+> `CACHE_DRIVER=redis` would be *silently* ignored and leave you on an in-process
+> cache. `config/cache.rs` re-states the refusal for that reason.
 - **Keys.** Set `APP_KEY`. Rotate by moving the old one into
   `APP_PREVIOUS_KEYS` and putting a new one in `APP_KEY`.
 - **Debug.** `APP_DEBUG=false` — with it on, internal error messages reach the

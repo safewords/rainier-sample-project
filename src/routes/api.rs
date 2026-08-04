@@ -44,6 +44,23 @@ pub fn routes(router: &mut Router, metrics: Option<Arc<Metrics>>) {
 
             // --- public ---------------------------------------------------
             router.get("/posts", post_controller::index).name("posts.index");
+
+            // Declared **before** `/posts/{post}`, and it has to be. Routes are
+            // tried in declaration order and the first match wins, so
+            // `/api/posts/trashed` would otherwise be read as a post whose slug
+            // is `trashed` — and the `where_slug` constraint below does not
+            // save it, because `trashed` *is* a slug. The symptom is a 404 from
+            // a route that exists and is spelled correctly, which is a bad
+            // afternoon.
+            //
+            // It carries its own guard here rather than joining the
+            // authenticated group below, because that group is declared after
+            // the parameter route — and moving the parameter route down would
+            // order every public read behind an authenticated one.
+            router.group(GroupAttributes::new().middleware(kernel::auth("api")), |router| {
+                router.get("/posts/trashed", post_controller::trashed).name("posts.trashed");
+            });
+
             router
                 .get("/posts/{post}", post_controller::show)
                 .name("posts.show")
@@ -71,6 +88,15 @@ pub fn routes(router: &mut Router, metrics: Option<Arc<Metrics>>) {
                 router
                     .delete("/posts/{post}", post_controller::destroy)
                     .name("posts.destroy")
+                    .where_slug("post");
+
+                // The bin's other half is up above, before `/posts/{post}` —
+                // see the note there. This one needs no such care: its literal
+                // segment comes after the parameter, so nothing else matches
+                // it.
+                router
+                    .post("/posts/{post}/restore", post_controller::restore)
+                    .name("posts.restore")
                     .where_slug("post");
 
                 // The in-app bell menu — what the database channel wrote.

@@ -34,6 +34,9 @@ pub struct ListPostsRequest {
     /// An optional title search.
     #[serde(default)]
     pub search: Option<String>,
+    /// An optional tag to filter by, named rather than keyed.
+    #[serde(default)]
+    pub tag: Option<String>,
 }
 
 fn first_page() -> u64 {
@@ -52,6 +55,7 @@ impl FormRequest for ListPostsRequest {
             // Bounded, or a client could ask for every row in one request.
             field("per_page", [Rule::Integer, Rule::Between(1.0, 100.0)]),
             field("search", [Rule::String, Rule::Max(100.0)]),
+            field("tag", [Rule::String, Rule::Max(50.0)]),
         ]
     }
 

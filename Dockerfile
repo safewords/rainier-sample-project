@@ -32,6 +32,31 @@ WORKDIR /build
 # `docker run` as `-e`, the way the run command above shows. (`.env` itself
 # is dockerignored for the same reason.)
 #
+# It is also the one place `CACHE_DRIVER`, `QUEUE_DRIVER` and `STORAGE_DRIVER`
+# are still spelled, and that is worth knowing before it confuses somebody. The
+# application reads none of them: a store, a queue connection and a disk each
+# name their own driver inside `config/cache.rs`, `config/queue.rs` and
+# `config/storage.rs`.
+#
+# `cargo rainier features` still needs them because it cannot read those
+# sections, and that is a boundary rather than a gap: a section is declared in
+# **Rust**, by this application's own `configure`, so reading one would mean
+# running the application — which a tool deciding how to *build* it cannot do.
+# Rainier's own `docs/deployment.md` covers it under "Sizing the image"; what
+# follows is only what it means for *this* Dockerfile.
+#
+# The two environments never meet. This file is copied into the *builder* and
+# nothing copies it into the runtime stage below, which matters most for the two
+# that are refused at boot:
+#
+#   CACHE_DRIVER, QUEUE_DRIVER   boot failure in the container — keep them here
+#   STORAGE_DRIVER               read by nothing at runtime; needed here for an
+#                                `s3` disk, which has nothing else to announce it
+#
+# `STORAGE_DRIVER` is the one that silently *under*-builds: leave it out and a
+# deployment whose `filesystems` section declares an S3 disk gets an image with
+# no S3 client in it, and finds out on the first upload.
+#
 # The default requires the file to exist, deliberately: an image sized
 # without the deployment's selections would be sized wrong — the example's
 # defaults would ship a log-mail, memory-cache binary — so a missing file

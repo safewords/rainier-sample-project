@@ -31,7 +31,7 @@
 
 use app::app::models::{Post, Tag, User};
 use app::app::providers::register_user;
-use app::app::repositories::PostRepository;
+use app::app::repositories::{PostRepository, TagRepository};
 use app::{boot, Mode};
 use rainier_framework::database::Repository;
 use rainier_framework::http::{Method, Request};
@@ -117,6 +117,10 @@ impl App {
 
     fn posts(&self) -> Arc<PostRepository> {
         self.app.resolve::<PostRepository>().expect("a post repository")
+    }
+
+    fn tags(&self) -> Arc<TagRepository> {
+        self.app.resolve::<TagRepository>().expect("a tag repository")
     }
 
     fn broadcasts(&self) -> Arc<rainier_framework::broadcast::MemoryBroadcaster> {
@@ -303,9 +307,8 @@ async fn the_index_lists_only_published_posts() {
     let posts = app.posts();
 
     posts.create_unique(Post::draft("A draft", "body", author.id)).await.unwrap();
-    let mut live = posts.create_unique(Post::draft("Published", "body", author.id)).await.unwrap();
-    live.published = true;
-    posts.update(&live).await.unwrap();
+    let live = posts.create_unique(Post::draft("Published", "body", author.id)).await.unwrap();
+    posts.publish(live.id).await.unwrap();
 
     let body = app.json(app.get("/api/posts")).await;
     assert_eq!(body["total"], 1);
@@ -321,9 +324,8 @@ async fn the_index_loads_the_author_of_every_post_it_returns() {
     let posts = app.posts();
 
     for title in ["One", "Two", "Three"] {
-        let mut post = posts.create_unique(Post::draft(title, "body", author.id)).await.unwrap();
-        post.published = true;
-        posts.update(&post).await.unwrap();
+        let post = posts.create_unique(Post::draft(title, "body", author.id)).await.unwrap();
+        posts.publish(post.id).await.unwrap();
     }
 
     let body = app.json(app.get("/api/posts")).await;
@@ -343,19 +345,21 @@ async fn a_post_carries_the_tags_the_pivot_links_to_it() {
         register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
     let posts = app.posts();
 
-    let mut post = posts.create_unique(Post::draft("Tagged", "body", author.id)).await.unwrap();
-    post.published = true;
-    posts.update(&post).await.unwrap();
+    let post = posts.create_unique(Post::draft("Tagged", "body", author.id)).await.unwrap();
+    posts.publish(post.id).await.unwrap();
 
     let tags = app.resolve::<EntityRepository<Tag>>().unwrap();
     let rust = tags.create(Tag::named("Rust")).await.unwrap();
     let laravel = tags.create(Tag::named("laravel")).await.unwrap();
 
-    let db = app.resolve::<rainier_framework::database::Database>().unwrap();
+    // This used to be `db.statement("INSERT INTO post_tag VALUES (…)")`, hand
+    // formatted, because the pivot had no model to insert through. It has one
+    // now — see `PostTag` — and `attach` is an upsert on the pair, so the second
+    // call below is a no-op rather than a constraint violation.
+    let links = app.tags();
     for tag in [&rust, &laravel] {
-        db.statement(&format!("INSERT INTO post_tag VALUES ({}, {})", post.id, tag.id))
-            .await
-            .unwrap();
+        links.attach(post.id, tag.id).await.unwrap();
+        links.attach(post.id, tag.id).await.expect("attaching twice is not an error");
     }
 
     let body = app.json(app.get("/api/posts")).await;
@@ -963,4 +967,284 @@ async fn encryption_is_wired_and_round_trips() {
     let signed = crypt.sign("unsubscribe-42").unwrap();
     assert!(signed.starts_with("unsubscribe-42."), "signing leaves the value readable");
     assert_eq!(crypt.verify(&signed).unwrap(), "unsubscribe-42");
+}
+
+// --- soft deletes -----------------------------------------------------------
+
+#[tokio::test]
+async fn binning_a_post_hides_it_everywhere_without_losing_it() {
+    // The whole point of the scope, and the reason it is worth an automatic
+    // predicate rather than a remembered one: *every* read has to hide the row,
+    // and a listing that forgot would look exactly like one that did not.
+    let app = App::boot().await;
+    let token = app.login().await;
+
+    let created = app
+        .json(
+            app.authed(Method::POST, "/api/posts", &token)
+                .json(&serde_json::json!({ "title": "Binned", "body": "Long enough to pass." }))
+                .build(),
+        )
+        .await;
+    let slug = created["slug"].as_str().unwrap().to_string();
+
+    app.send(app.authed(Method::POST, &format!("/api/posts/{slug}/publish"), &token).build())
+        .await
+        .assert_ok();
+
+    // Visible: on the listing and by its own URL.
+    assert_eq!(app.json(app.get("/api/posts")).await["total"], 1);
+    app.send(app.get(&format!("/api/posts/{slug}"))).await.assert_ok();
+
+    app.send(app.authed(Method::DELETE, &format!("/api/posts/{slug}"), &token).build())
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    // Gone from the listing, and gone from route-model binding — which is a
+    // read like any other, so `Bound<Post>` finds nothing and answers 404.
+    assert_eq!(app.json(app.get("/api/posts")).await["total"], 0);
+    app.send(app.get(&format!("/api/posts/{slug}"))).await.assert_not_found();
+
+    // And from the count, which is a different builder and would have needed
+    // its own predicate under a manual scheme.
+    assert_eq!(app.posts().count().await.unwrap(), 0);
+
+    // The row is still there. `with_trashed` is what proves the delete was
+    // soft: without it this assertion cannot be written at all.
+    let surviving = app
+        .posts()
+        .matching(Criteria::new().where_eq("slug", slug.clone()).with_trashed())
+        .await
+        .unwrap();
+    assert_eq!(surviving.len(), 1, "a soft delete leaves the row");
+    assert!(surviving[0].deleted_at.is_some(), "and stamps it");
+}
+
+#[tokio::test]
+async fn the_bin_lists_what_is_in_it_and_a_restore_brings_it_back() {
+    // The direction that turning the scope on breaks. Under the scope this
+    // listing returns nothing — not an error, an empty page — so `only_trashed`
+    // is the whole method, and the restore reaches a row no read can see.
+    let app = App::boot().await;
+    let token = app.login().await;
+
+    let created = app
+        .json(
+            app.authed(Method::POST, "/api/posts", &token)
+                .json(&serde_json::json!({ "title": "Recoverable", "body": "Long enough here." }))
+                .build(),
+        )
+        .await;
+    let slug = created["slug"].as_str().unwrap().to_string();
+
+    // Nothing in the bin yet.
+    assert_eq!(
+        app.json(app.authed(Method::GET, "/api/posts/trashed", &token).build()).await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    app.send(app.authed(Method::DELETE, &format!("/api/posts/{slug}"), &token).build())
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+
+    let bin = app.json(app.authed(Method::GET, "/api/posts/trashed", &token).build()).await;
+    assert_eq!(bin["data"].as_array().unwrap().len(), 1);
+    assert_eq!(bin["data"][0]["slug"], slug.as_str());
+
+    app.send(app.authed(Method::POST, &format!("/api/posts/{slug}/restore"), &token).build())
+        .await
+        .assert_ok();
+
+    // Back to being an ordinary draft: readable by the repository, and out of
+    // the bin.
+    assert_eq!(app.posts().count().await.unwrap(), 1);
+    assert_eq!(
+        app.json(app.authed(Method::GET, "/api/posts/trashed", &token).build()).await["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn a_binned_slug_is_still_taken() {
+    // The least obvious consequence of the scope, and the one that would have
+    // shipped: the unique index does not know about it, so a probe that read
+    // through the scope would find the slug free and hand the insert into a
+    // constraint violation. `create_unique` uses `with_trashed` for exactly
+    // this.
+    let app = App::boot().await;
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let posts = app.posts();
+
+    let first = posts.create_unique(Post::draft("Same title", "body", author.id)).await.unwrap();
+    assert_eq!(first.slug, "same-title");
+
+    posts.trash(first.id).await.unwrap();
+
+    // A read cannot see the first post at all, and the insert still has to
+    // avoid its slug.
+    let second = posts.create_unique(Post::draft("Same title", "body", author.id)).await.unwrap();
+    assert_eq!(second.slug, "same-title-2", "a binned row still holds its slug");
+}
+
+#[tokio::test]
+async fn binning_the_same_post_twice_does_not_move_its_tombstone() {
+    // The write is unscoped, so the second call *can* reach the row. What stops
+    // it is the criteria's own `where_null`, and without it a retried request
+    // would push the retention clock forward every time.
+    let app = App::boot().await;
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let posts = app.posts();
+
+    let post = posts.create_unique(Post::draft("Twice", "body", author.id)).await.unwrap();
+
+    assert!(posts.trash(post.id).await.unwrap(), "the first call bins it");
+    let stamped = posts.trashed_for_author(author.id).await.unwrap()[0].deleted_at;
+
+    assert!(!posts.trash(post.id).await.unwrap(), "the second call is a no-op");
+    assert_eq!(
+        posts.trashed_for_author(author.id).await.unwrap()[0].deleted_at,
+        stamped,
+        "the tombstone did not move"
+    );
+}
+
+// --- partial updates --------------------------------------------------------
+
+#[tokio::test]
+async fn publishing_writes_one_column_and_leaves_a_concurrent_edit_alone() {
+    // The failure `update(&model)` produces, demonstrated rather than described:
+    // the publish request holds a copy of the post from before the rename, and
+    // a full-row write would put the old title back. Nothing would error and one
+    // row would be reported affected, which is what a correct write reports too.
+    let app = App::boot().await;
+    let token = app.login().await;
+
+    let created = app
+        .json(
+            app.authed(Method::POST, "/api/posts", &token)
+                .json(&serde_json::json!({ "title": "Draft title", "body": "Long enough here." }))
+                .build(),
+        )
+        .await;
+    let slug = created["slug"].as_str().unwrap().to_string();
+    let id = created["id"].as_u64().unwrap();
+
+    // Somebody renames it between the read the publish request did and the
+    // write it is about to do.
+    let posts = app.posts();
+    posts.update_column(Criteria::new().where_eq("id", id), "title", "Real title").await.unwrap();
+
+    app.send(app.authed(Method::POST, &format!("/api/posts/{slug}/publish"), &token).build())
+        .await
+        .assert_ok();
+
+    let stored = posts.find(id.into()).await.unwrap().expect("the post");
+    assert!(stored.published, "the column the caller named was written");
+    assert_eq!(stored.title, "Real title", "the column it did not name was left alone");
+}
+
+#[tokio::test]
+async fn publishing_twice_publishes_once() {
+    // The guard lives in the statement's own criteria rather than in an `if`
+    // between a read and a write, so two requests cannot both conclude they
+    // were the one that published it — and only one dispatches the author's
+    // notification.
+    let app = App::boot().await;
+    let token = app.login().await;
+
+    let created = app
+        .json(
+            app.authed(Method::POST, "/api/posts", &token)
+                .json(&serde_json::json!({ "title": "Once", "body": "Long enough to pass." }))
+                .build(),
+        )
+        .await;
+    let slug = created["slug"].as_str().unwrap().to_string();
+    let id = created["id"].as_u64().unwrap();
+
+    assert!(app.posts().publish(id).await.unwrap(), "the first call publishes");
+    assert!(!app.posts().publish(id).await.unwrap(), "the second finds nothing to do");
+
+    // And through the endpoint, which is what a double-click actually hits.
+    app.send(app.authed(Method::POST, &format!("/api/posts/{slug}/publish"), &token).build())
+        .await
+        .assert_ok();
+}
+
+// --- correlated subqueries and the pivot ------------------------------------
+
+#[tokio::test]
+async fn filtering_by_tag_returns_only_the_tagged_posts_and_counts_them_once() {
+    // Two claims, and the second is why this is `EXISTS` rather than a join. A
+    // join over a many-to-many multiplies rows, so a post with two tags would
+    // appear twice and `total` would count the duplicates.
+    let app = App::boot().await;
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let posts = app.posts();
+    let tags = app.tags();
+
+    let tagged = posts.create_unique(Post::draft("Tagged one", "body", author.id)).await.unwrap();
+    let untagged = posts.create_unique(Post::draft("Plain one", "body", author.id)).await.unwrap();
+    for post in [&tagged, &untagged] {
+        posts.publish(post.id).await.unwrap();
+    }
+
+    let rust = tags.create(Tag::named("rust")).await.unwrap();
+    let orm = tags.create(Tag::named("orm")).await.unwrap();
+    // Two tags on one post: the multiplication a join would produce.
+    tags.attach(tagged.id, rust.id).await.unwrap();
+    tags.attach(tagged.id, orm.id).await.unwrap();
+
+    let filtered = app.json(app.get("/api/posts?tag=rust")).await;
+    assert_eq!(filtered["total"], 1, "one post, not one row per link");
+    assert_eq!(filtered["data"][0]["post"]["slug"], "tagged-one");
+
+    // Unfiltered still sees both, so the subquery is a filter rather than a
+    // join that dropped a row.
+    assert_eq!(app.json(app.get("/api/posts")).await["total"], 2);
+
+    // A tag nobody used filters to nothing rather than to everything, which is
+    // what a dropped correlation would produce.
+    assert_eq!(app.json(app.get("/api/posts?tag=nothing-here")).await["total"], 0);
+}
+
+#[tokio::test]
+async fn the_tag_cloud_counts_only_posts_a_reader_could_reach() {
+    // A `GROUP BY` over a table keyed on two columns — reachable only because
+    // the pivot is an entity and `aggregate_rows` is `Entity`-bound. The
+    // `EXISTS` is what keeps drafts and binned posts out of the count, so a tag
+    // cannot advertise a number that leads to an empty page.
+    let app = App::boot().await;
+    let author =
+        register_user(app.container(), "Ada", "ada@example.com", "correct-horse").await.unwrap();
+    let posts = app.posts();
+    let tags = app.tags();
+
+    let live = posts.create_unique(Post::draft("Live", "body", author.id)).await.unwrap();
+    let draft = posts.create_unique(Post::draft("Draft", "body", author.id)).await.unwrap();
+    let binned = posts.create_unique(Post::draft("Binned", "body", author.id)).await.unwrap();
+
+    posts.publish(live.id).await.unwrap();
+    posts.publish(binned.id).await.unwrap();
+    posts.trash(binned.id).await.unwrap();
+
+    let rust = tags.create(Tag::named("rust")).await.unwrap();
+    for post in [&live, &draft, &binned] {
+        tags.attach(post.id, rust.id).await.unwrap();
+    }
+
+    let cloud = tags.cloud().await.unwrap();
+
+    assert_eq!(cloud.len(), 1, "one tag is in use");
+    assert_eq!(cloud[0].tag_id, rust.id);
+    assert_eq!(cloud[0].posts, 1, "the draft and the binned post are not reachable");
 }

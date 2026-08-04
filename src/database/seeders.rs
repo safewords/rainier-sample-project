@@ -33,10 +33,14 @@ pub async fn seed(app: &Application) -> Result<()> {
             continue;
         }
 
-        let mut post = posts.create_unique(Post::draft(title, body, author.id)).await?;
+        let post = posts.create_unique(Post::draft(title, body, author.id)).await?;
         if published {
-            post.published = true;
-            posts.update(&post).await?;
+            // The named write rather than `update(&post)`. Nothing is racing a
+            // seeder, so this is not the concurrency argument — it is that the
+            // seeder should demonstrate the call a request would make, and a
+            // sample whose seeder reaches for the unsafe-but-obvious one is
+            // teaching that call.
+            posts.publish(post.id).await?;
         }
     }
 

@@ -33,6 +33,16 @@
 //! [contract](rainier_framework::database::Migration), not a convention. Where
 //! a step genuinely cannot be undone, say so with `Down::irreversible` and the
 //! reason travels with it — see `m0005_normalise_emails`.
+//!
+//! ## And one consequence of the first rule
+//!
+//! A `create_table::<M>` step renders whatever the model says *today*, so a
+//! field added to the model changes what an already-numbered migration does.
+//! Which means a column the model carries cannot also arrive in a later alter:
+//! a fresh database runs both, and `ADD COLUMN` has no portable "if not
+//! exists". The trade-off is written up in `m0002_create_posts`, which is where
+//! `posts.deleted_at` is created and where `m0008`'s model-less `excerpt` is
+//! explained.
 
 use rainier_framework::database::Migrator;
 
@@ -64,8 +74,8 @@ pub fn all() -> Migrator {
         // A framework component that needs a table brings its own migration.
         // The notification channel's rows are what the in-app list reads.
         .merge(rainier_framework::notifications::DatabaseChannel::migrations())
-        // And the database queue's two tables, so `QUEUE_DRIVER=database` is
-        // one line in `.env` rather than a migration hunt. Creating tables a
+        // And the database queue's two tables, so `QUEUE_CONNECTION=database`
+        // is one line in `.env` rather than a migration hunt. Creating tables a
         // deployment may not use costs two empty tables; the reverse costs a
         // boot that fails in production.
         .merge(rainier_framework::queue::DatabaseQueue::migrations())

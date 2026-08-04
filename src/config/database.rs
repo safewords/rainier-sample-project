@@ -40,9 +40,18 @@
 //! `strict` is the same shape: without it MySQL truncates an over-long or
 //! out-of-range value instead of erroring, so the write succeeds and the stored
 //! value is not what was sent.
+//!
+//! # A pool belongs to a connection
+//!
+//! `reporting` below takes a **smaller** pool than the primary, which is a
+//! setting one shared connector could not express. A report holds its
+//! connection for seconds; the ceiling is what stops a refreshed dashboard from
+//! reaching the server's own `max_connections`, where the failure stops being a
+//! slow report and becomes `Too many connections` for everything on that
+//! server.
 
 use rainier_framework::config::{Config, Env};
-use rainier_framework::database::{DatabaseConfig, Databases, ServerDatabase};
+use rainier_framework::database::{DatabaseConfig, Databases, PoolSettings, ServerDatabase};
 use rainier_framework::keys::DATABASES;
 use rainier_framework::prelude::*;
 
@@ -138,6 +147,24 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
         if !ca.is_empty() {
             reporting = reporting.tls_ca(ca);
         }
+
+        // A small pool, and deliberately smaller than the primary's — the other
+        // half of what a per-connection setting buys, beside the credentials
+        // and the charset above.
+        //
+        // A report holds its connection for as long as it runs, which is
+        // seconds rather than milliseconds. Without a ceiling, a dashboard
+        // refreshed by a dozen people opens a dozen connections and keeps them,
+        // and the wall it hits is the *server's* `max_connections` — at which
+        // point the failure is not a slow report. It is `Too many connections`
+        // for everything on that server, including the query that would have
+        // told somebody.
+        //
+        // `acquire_timeout` chooses which failure saturation produces once the
+        // ceiling is reached: a report that waits ten seconds for a free
+        // connection and then fails, rather than a request that waits forever
+        // and a client that gives up without anything here noticing.
+        reporting = reporting.pool(PoolSettings::new().max_connections(5).acquire_timeout(10));
 
         databases = databases.with("reporting", reporting);
     }
@@ -255,6 +282,25 @@ mod tests {
         // reports to production.
         assert_ne!(primary, reporting);
         assert!(reporting.contains("reports.internal"), "{reporting}");
+    }
+
+    #[test]
+    fn the_reporting_connection_is_capped_and_the_primary_is_not() {
+        // The setting a shared connector could not express: two connections,
+        // two ceilings. The primary is SQLite here and takes the driver's own
+        // pool; capping the replica is what stops a refreshed dashboard from
+        // exhausting the *server's* connection budget, which fails everything
+        // on that server rather than only the report.
+        let databases = databases_from(&Env::parse("REPORTING_DB_HOST=reports.internal"));
+
+        let DatabaseConfig::Server(reporting) = databases.get("reporting").expect("declared")
+        else {
+            panic!("the reporting connection should be a server database");
+        };
+
+        let pool = reporting.pool_settings().expect("declared");
+        assert_eq!(pool.max(), Some(5));
+        assert_eq!(pool.acquire_timeout_period(), Some(std::time::Duration::from_secs(10)));
     }
 
     #[test]

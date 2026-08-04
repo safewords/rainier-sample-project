@@ -38,12 +38,12 @@ config_keys! {
     /// The largest page a client may ask for.
     pub POSTS_MAX_PER_PAGE: u64 = "posts.max_per_page";
 
-    /// The SQS queue URL, when `QUEUE_DRIVER=sqs`.
-    ///
-    /// An application key in the framework's `queue.*` section — safe today
-    /// because the framework declares no such path, and the collision test
-    /// there would catch it growing one.
-    pub QUEUE_SQS_URL: String = "queue.sqs_url";
+    // --- queue ---------------------------------------------------------------
+    //
+    // `QUEUE_SQS_URL` was here. It is gone for the same reason the storage keys
+    // below are: a queue URL belongs to a *connection*, and `config/queue.rs`
+    // declares it there. A scalar beside the section would have been a second
+    // place to say the same thing, and the one nothing reads.
 
     // --- storage -------------------------------------------------------------
     //

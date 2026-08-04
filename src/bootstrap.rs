@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use rainier_framework::cache::{Cache, MemoryCache};
+use rainier_framework::cache::{CacheManager, CacheResources};
 use rainier_framework::config::Config;
 use rainier_framework::config::Env;
 use rainier_framework::crypt::{Encryption, Key, KeyRing};
@@ -14,6 +14,7 @@ use rainier_framework::database::Database;
 use rainier_framework::http::SameSite;
 use rainier_framework::observability::{MetricsSettings, OpenApiSettings, TelemetrySettings};
 use rainier_framework::prelude::*;
+use rainier_framework::queue::{JobRegistry, MemoryQueue, QueueManager};
 use rainier_framework::session::{
     CacheSessionStore, CookieSessionStore, DatabaseSessionStore, MemorySessionStore, SessionConfig,
     SessionManager, SessionStore,
@@ -21,6 +22,7 @@ use rainier_framework::session::{
 use rainier_framework::view::{TemplateEngine, Vite};
 
 use crate::app::http::kernel;
+use crate::app::jobs::NotifyAuthor;
 use crate::app::providers::{AppServiceProvider, EventServiceProvider, RepositoryServiceProvider};
 use crate::config;
 use crate::routes;
@@ -57,6 +59,12 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
     // raw environment here.
     let database = connect(mode, &settings).await?;
 
+    // And the cache, from the same tree. Built here rather than left to the
+    // framework because the session store needs one *before* the application
+    // boots, and building a second would give sessions a different backend from
+    // the locks and rate limits — see `cache`.
+    let cache = cache(&settings).await?;
+
     let metrics = MetricsSettings::from_config(&settings);
     let telemetry = TelemetrySettings::from_config(&settings);
     let api_docs = OpenApiSettings::from_config(&settings);
@@ -87,6 +95,31 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         builder = builder.with_instance_arc(metrics);
     }
 
+    // Every job a worker must be able to run. A job missing from here fails at
+    // run time with "no job is registered as …", so add to this list whenever
+    // you add a job.
+    //
+    // It belongs on the builder and not in a provider, and that is not a style
+    // preference: providers register *after* the queue is built, because a
+    // provider may legitimately resolve one. A registry handed over in a
+    // provider therefore reaches nothing, and the job it was carrying is
+    // dispatched, accepted, and fails when a worker picks it up.
+    let jobs = JobRegistry::new().with::<NotifyAuthor>();
+
+    builder = match mode {
+        // In memory under test: a test wants a job *queued* so it can assert on
+        // it, not run under its feet. Handed over whole rather than declared,
+        // because `config/queue.rs` describes a deployment and a test is not
+        // one — and because handing one over is how you *deliberately* override
+        // the section.
+        Mode::Testing => {
+            builder.with_queue(QueueManager::new(Arc::new(MemoryQueue::new()), Arc::new(jobs)))
+        }
+        // Otherwise whatever `config/queue.rs` declared, built by the framework
+        // from each connection's own settings.
+        Mode::Running => builder.with_jobs(jobs),
+    };
+
     let app = builder
         .configure(|c| {
             // The builder has already read `.env`; this layers the
@@ -105,7 +138,14 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
                 let _ = c.set(config::keys::APP_ENV, AppEnv::Testing);
             }
         })
-        .with_sessions(sessions(&env, &database)?)
+        .with_sessions(sessions(&env, &database, &cache)?)
+        // The cache the framework would otherwise have built itself, built from
+        // the same declared section it would have read. Supplying one *wins*
+        // over `config/cache.rs` — which is exactly the silent divergence the
+        // missing `storage()` below warns about — so what makes this safe is
+        // that it is not a second answer: it is the section's own answer,
+        // resolved once so that sessions, locks and rate limits share it.
+        .with_cache(cache.clone())
         // Uploaded files are *not* wired here. `config/storage.rs` declares
         // the disks and the framework builds them — see the note where this
         // application's own `storage()` builder used to be. Calling
@@ -171,7 +211,7 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
 /// A function rather than a line in the builder because the driver is a
 /// branch, and a branch in the middle of a builder chain is where a wiring
 /// mistake hides.
-fn sessions(env: &Env, database: &Database) -> Result<SessionManager> {
+fn sessions(env: &Env, database: &Database, cache: &CacheManager) -> Result<SessionManager> {
     let lifetime = chrono::Duration::seconds(env.int("SESSION_LIFETIME", 7200));
 
     // An exhaustive `match` on a closed set, not a string compare with a
@@ -186,11 +226,30 @@ fn sessions(env: &Env, database: &Database) -> Result<SessionManager> {
             Arc::new(DatabaseSessionStore::new(database.clone()).with_lifetime(lifetime))
         }
 
-        // Sessions in whatever the cache is pointed at — Redis, a Redis
-        // Cluster, or Memcached, all behind one port. The cache expires them
-        // itself, so nothing has to sweep.
+        // Sessions in one of the stores `config/cache.rs` declared. The store
+        // expires them itself, so nothing has to sweep.
+        //
+        // `SESSION_STORE` names *which* declared store, because sessions and
+        // cached values want opposite eviction policies — see the note in
+        // `config/cache.rs`. Naming one that was never declared is an error
+        // rather than a fallback to the default: a session store that quietly
+        // became the wrong one would log people out on the deploy that changed
+        // it, and the fallback is what would have hidden the typo.
         SessionDriver::Cache => {
-            Arc::new(CacheSessionStore::new(cache(env)?).with_lifetime(lifetime))
+            let name = env.string("SESSION_STORE", "");
+            let store = if name.is_empty() {
+                Arc::clone(cache.store())
+            } else {
+                Arc::clone(cache.store_named(&name).ok_or_else(|| {
+                    Error::internal(format!(
+                        "SESSION_STORE={name} is not a declared cache store; declared stores are \
+                         {}. See `config/cache.rs`",
+                        cache.store_names().collect::<Vec<_>>().join(", ")
+                    ))
+                })?)
+            };
+
+            Arc::new(CacheSessionStore::new(store).with_lifetime(lifetime))
         }
 
         // The whole session, encrypted, in the cookie. No server state at all —
@@ -212,123 +271,34 @@ fn sessions(env: &Env, database: &Database) -> Result<SessionManager> {
     ))
 }
 
-/// Build the cache from `config/cache.rs`.
+/// Build every cache store `config/cache.rs` declared.
 ///
-/// Three failure modes, and they get three different answers:
+/// This used to be a hundred lines of `match driver { … }` with a `#[cfg]` arm
+/// per backend, reading `CACHE_DRIVER` out of the environment. All of it is
+/// gone, and what replaced it is the section: a store names its own driver, so
+/// there is no driver name here to match on.
 ///
-/// | | |
-/// |---|---|
-/// | `CACHE_DRIVER=redys` | **error** — a value outside the set, caught by `setting` |
-/// | `CACHE_DRIVER=redis`, no `redis-driver` feature | **error** — naming the feature to enable |
-/// | `CACHE_DRIVER=redis`, Redis unreachable | warn, fall back to memory |
+/// One behaviour changed with it and it is worth saying out loud, because it is
+/// a deliberate reversal. The old version treated an unreachable Redis as
+/// survivable — it logged and fell back to an in-process cache — on the
+/// argument that a cache is the one dependency an application should be able to
+/// lose. That argument is right about *cached values* and wrong about
+/// everything else this store carries. A per-process cache in place of a shared
+/// one is not a degraded cache: it is a `LockManager` whose locks hold within
+/// one replica and nowhere else, a rate limiter that counts to its limit once
+/// per replica, and a session store that logs a user out whenever the
+/// load balancer sends them somewhere new. None of those report anything.
 ///
-/// Only the last is a runtime condition the application can be expected to
-/// survive. The first two are mistakes in the deployment, and a cache that
-/// silently is not the one you asked for is worse than a boot that stops.
-fn cache(env: &Env) -> Result<Arc<dyn Cache>> {
-    let driver = env.setting::<CacheDriver>("CACHE_DRIVER")?;
-
-    match driver {
-        CacheDriver::Memory => Ok(Arc::new(MemoryCache::new())),
-
-        CacheDriver::Redis | CacheDriver::RedisCluster => {
-            #[cfg(feature = "redis")]
-            {
-                use rainier_framework::drivers::RedisConnector;
-
-                let url = env.string("REDIS_URL", "redis://127.0.0.1:6379/");
-                let connector = if driver == CacheDriver::RedisCluster {
-                    #[cfg(feature = "redis-cluster")]
-                    {
-                        let seeds: Vec<String> =
-                            url.split(',').map(str::trim).map(String::from).collect();
-                        RedisConnector::open_cluster(seeds)
-                    }
-                    #[cfg(not(feature = "redis-cluster"))]
-                    {
-                        return Err(missing_feature(driver));
-                    }
-                } else {
-                    RedisConnector::open(&url)
-                };
-
-                // Connecting is async and this is not, so the connection is
-                // opened on a blocking handle. A cache that is briefly
-                // unreachable must not stop the application booting, so *this*
-                // failure — unlike the two above — falls back with a loud line.
-                match connector.and_then(|connector| {
-                    tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current()
-                            .block_on(rainier_framework::cache::RedisCache::connect(&connector))
-                    })
-                }) {
-                    Ok(redis) => Ok(Arc::new(redis)),
-                    Err(e) => {
-                        tracing::error!(
-                            error = %e.message(),
-                            "could not reach Redis; using memory"
-                        );
-                        Ok(Arc::new(MemoryCache::new()))
-                    }
-                }
-            }
-            #[cfg(not(feature = "redis"))]
-            {
-                Err(missing_feature(driver))
-            }
-        }
-
-        CacheDriver::Memcached => {
-            #[cfg(feature = "memcached")]
-            {
-                use rainier_framework::cache::MemcachedCache;
-                use rainier_framework::drivers::MemcachedConnector;
-
-                let url = env.string("MEMCACHED_URL", "127.0.0.1:11211");
-                Ok(Arc::new(MemcachedCache::new(MemcachedConnector::open(url))))
-            }
-            #[cfg(not(feature = "memcached"))]
-            {
-                Err(missing_feature(driver))
-            }
-        }
-
-        // This application does not build the DynamoDB store. Saying so beats
-        // a `_ =>` arm, which would swallow a driver added to the framework
-        // later.
-        CacheDriver::DynamoDb => Err(Error::internal(
-            "CACHE_DRIVER=dynamodb is not wired up in this application; see `bootstrap::cache`",
-        )),
-
-        // Workers KV needs either a Worker binding or REST credentials, and
-        // neither is something this application has. Worth knowing before
-        // reaching for it anyway: KV is eventually consistent and has no
-        // compare-and-set, so it cannot back the session store or the
-        // scheduler's locks — both of which this application uses.
-        //
-        // This arm is why the `DynamoDb` one above is spelled out rather than
-        // written as `_`: the framework added a driver in 1.1.0, and the
-        // compiler said so here instead of the new variant silently falling
-        // into a catch-all.
-        CacheDriver::Kv => Err(Error::internal(
-            "CACHE_DRIVER=kv is not wired up in this application; see `bootstrap::cache`",
-        )),
-    }
-}
-
-/// The driver exists but this build cannot construct it.
-///
-/// A different message from "unknown driver" on purpose: the fix is a cargo
-/// feature, not a spelling correction, and the message says which one.
-#[allow(dead_code, reason = "used only by the arms whose feature is off")]
-fn missing_feature(driver: CacheDriver) -> Error {
-    match driver.feature() {
-        Some(feature) => Error::internal(format!(
-            "CACHE_DRIVER={driver} needs the `{feature}` cargo feature, which this build does \
-             not have"
-        )),
-        None => Error::internal(format!("CACHE_DRIVER={driver} is not available in this build")),
-    }
+/// So a store that cannot be reached now fails the boot, naming it. A driver
+/// whose cargo feature is missing does the same, for the reason it always did.
+async fn cache(settings: &Config) -> Result<CacheManager> {
+    // `CacheResources` is for the one driver no configuration file can
+    // describe: Workers KV needs a binding that exists inside a Worker and an
+    // API client outside one. This application declares no `kv` store, so it
+    // has nothing to carry — and a store that needed one and was not given it
+    // would be a boot failure naming the missing piece, not a store that
+    // quietly became something else.
+    settings.require(rainier_framework::keys::CACHE_STORES)?.build(&CacheResources::new()).await
 }
 
 // There is no `storage()` builder here any more, and its absence is the point.
@@ -379,4 +349,83 @@ async fn connect(mode: Mode, settings: &Config) -> Result<Database> {
     // feature, which this crate enables. Use `bind_executor!` for an executor
     // *you* wrote.
     Ok(Database::new(executor))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Configuration as `boot` reads it: the application's own sections over a
+    /// fresh tree, from a given environment.
+    fn settings_from(env: &Env) -> Config {
+        let settings = Config::new();
+        config::configure(&settings, env).unwrap();
+        settings
+    }
+
+    #[tokio::test]
+    async fn whatever_declares_the_cache_also_reaches_the_code_that_opens_it() {
+        // The same regression `config/database.rs` has a test named for, in the
+        // shape the cache takes — and it is worth its own assertion because the
+        // cache's version of it is the quietest of the four. A section declared
+        // in `config/cache.rs` and a manager built from anything else is not an
+        // error anybody sees: a read from the wrong store is a miss, a miss is
+        // not a failure, so the application is merely slow and its locks are
+        // not locks.
+        //
+        // What has to be true is that `cache` builds *the declared section* and
+        // not a second answer assembled beside it.
+        let settings = settings_from(&Env::parse(""));
+        let manager = cache(&settings).await.expect("the declared stores build");
+
+        let declared = settings.require(rainier_framework::keys::CACHE_STORES).unwrap();
+        assert_eq!(manager.driver(), "memory");
+        assert!(manager.has_store(declared.default_name()));
+
+        // Every declared store is reachable by the name it was declared under,
+        // so `SESSION_STORE` naming one resolves to that one.
+        for name in declared.names() {
+            assert!(manager.has_store(name), "`{name}` was declared and was not built");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_session_store_naming_an_undeclared_cache_store_stops_the_boot() {
+        // Not a fallback to the default. A session store that quietly became
+        // the wrong one would sign everybody out on the deploy that changed it,
+        // and the fallback is what would have hidden the typo.
+        let env = Env::parse("SESSION_DRIVER=cache\nSESSION_STORE=shard");
+        let settings = settings_from(&env);
+        let cache = cache(&settings).await.expect("the declared stores build");
+        let (database, _) = rainier_framework::database::testing::fake_database(
+            rainier_framework::database::testing::MemoryConnection::new(
+                rainier_framework::database::Dialect::Sqlite,
+            ),
+        );
+
+        let err = sessions(&env, &database, &cache).expect_err("`shard` is not declared");
+
+        assert!(err.message().contains("SESSION_STORE"), "{}", err.message());
+        // And it lists what *is* declared, so the fix is a read rather than a
+        // search.
+        assert!(err.message().contains("memory"), "{}", err.message());
+    }
+
+    #[tokio::test]
+    async fn the_default_session_store_is_the_one_the_cache_section_defaults_to() {
+        // `SESSION_STORE` unset means "wherever the cache lives", which is the
+        // single-Redis deployment and the right place to start. The assertion
+        // is that it resolves at all — a version of this that looked the name
+        // up unconditionally would fail on the empty string.
+        let env = Env::parse("SESSION_DRIVER=cache");
+        let settings = settings_from(&env);
+        let cache = cache(&settings).await.expect("the declared stores build");
+        let (database, _) = rainier_framework::database::testing::fake_database(
+            rainier_framework::database::testing::MemoryConnection::new(
+                rainier_framework::database::Dialect::Sqlite,
+            ),
+        );
+
+        assert!(sessions(&env, &database, &cache).is_ok());
+    }
 }

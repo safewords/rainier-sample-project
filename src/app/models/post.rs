@@ -7,9 +7,41 @@ use serde::Serialize;
 use crate::app::models::{Tag, User};
 
 /// A post, owned by a user.
+///
+/// # It soft-deletes, and that is declared rather than inferred
+///
+/// [`deleted_at`](Post::deleted_at) carries `#[orm(soft_delete)]`, and one line
+/// changes every read of this table: `find`, `first_matching`,
+/// `paginate_matching`, the counts, the aggregates and the relation loads all
+/// append `deleted_at IS NULL` themselves. A caller cannot forget it, which
+/// matters because forgetting it raises nothing — the query runs, the rows
+/// decode, the page renders, with the deleted posts on it.
+///
+/// Nothing sniffs for a column *named* `deleted_at`, and the difference is not
+/// pedantry. A table that records a deletion date as **domain data** — when an
+/// author retracted something, when an account was closed — would silently stop
+/// returning most of its rows, on the upgrade that introduced the inference
+/// rather than on a change anybody wrote. A marker costs one line and cannot
+/// guess.
+///
+/// The other direction needs saying just as loudly, because turning the scope
+/// on flips deliberately-trashed reads from working to returning nothing, and
+/// just as silently. An admin bin, a restore endpoint, a purge job all mean to
+/// see tombstoned rows and all come back empty under the scope. `with_trashed()`
+/// and `only_trashed()` are how they opt out — see
+/// [`PostRepository::trashed_for_author`](crate::app::repositories::PostRepository::trashed_for_author).
+///
+/// Note what the marker does *not* do: it scopes reads, it does not turn a
+/// `DELETE` into an `UPDATE`. Writing the tombstone is this application's job
+/// and it is one visible line — see
+/// [`PostRepository::trash`](crate::app::repositories::PostRepository::trash).
 #[derive(Entity, Clone, Debug, PartialEq, Serialize)]
 #[orm(table = "posts")]
 #[orm(index = "published, created_at")]
+// For the direction the scope does *not* serve. Listing an author's bin is
+// `deleted_at IS NOT NULL`, which no index on the other columns helps, and it is
+// a page a person waits on.
+#[orm(index = "author_id, deleted_at")]
 pub struct Post {
     /// The primary key.
     #[orm(pk, auto_increment)]
@@ -39,6 +71,15 @@ pub struct Post {
 
     /// When the row was created.
     pub created_at: DateTime<Utc>,
+
+    /// When it was moved to the bin, or `None` while it is live.
+    ///
+    /// The tombstone, and `Option` is not a style choice: `NULL` is what "not
+    /// deleted" means to the scope this marker installs, so a non-`Option`
+    /// field would make every scoped read of `posts` return nothing. The derive
+    /// refuses it at compile time rather than letting that ship.
+    #[orm(soft_delete)]
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 impl Model for Post {
@@ -81,6 +122,7 @@ impl Post {
             published: false,
             author_id,
             created_at: Utc::now(),
+            deleted_at: None,
         }
     }
 
@@ -160,5 +202,18 @@ mod tests {
     fn the_route_key_is_the_slug() {
         assert_eq!(Post::route_key_name(), "slug");
         assert_eq!(Post::primary_key(), "id");
+    }
+
+    #[test]
+    fn the_tombstone_column_is_declared_and_not_guessed() {
+        // The one line that scopes every read of this table. Asserting it here
+        // is asserting the *declaration*, which is what the scope is built
+        // from — a column of the same name without the marker would leave every
+        // deleted post visible on every surface, with nothing to report.
+        assert_eq!(Post::soft_delete_column(), Some("deleted_at"));
+
+        // And it is a `Tag`, not this model, that shows what an unmarked entity
+        // still does: exactly what it did before soft deletes existed.
+        assert_eq!(crate::app::models::Tag::soft_delete_column(), None);
     }
 }
