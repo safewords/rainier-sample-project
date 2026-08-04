@@ -32,6 +32,20 @@ config_keys! {
     // the whole `mail.*` section now that it builds the transports. See
     // `config/mail.rs` for where this application reads them.
 
+    /// Every origin a browser may call this application's API from.
+    ///
+    /// A `Vec<String>` and not a comma-separated `String`, so the one place
+    /// that splits it is `config/cors.rs` — a reader that forgot to trim would
+    /// hold ` https://example.com`, which matches no `Origin` header a browser
+    /// has ever sent.
+    ///
+    /// There is deliberately no `CORS_ALLOW_CREDENTIALS` beside it. Credentials
+    /// and the origin list are one decision, not two settings that can disagree:
+    /// a deployment that turned credentials off would not get a more permissive
+    /// API, it would get one no browser can authenticate against. See
+    /// `config/cors.rs`.
+    pub CORS_ALLOWED_ORIGINS: Vec<String> = "cors.allowed_origins";
+
     /// How many posts a listing shows by default.
     pub POSTS_PER_PAGE: u64 = "posts.per_page";
 

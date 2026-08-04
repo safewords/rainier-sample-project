@@ -350,6 +350,13 @@ repository as the driver.
   `APP_PREVIOUS_KEYS` and putting a new one in `APP_KEY`.
 - **Debug.** `APP_DEBUG=false` — with it on, internal error messages reach the
   client, and those routinely contain a connection string or a query.
+- **CORS.** `config/cors.rs` names `https://example.com`, which is not your
+  front end. Replace the list or append to it with `CORS_ALLOWED_ORIGINS` — an
+  origin that is not on it cannot call the API from a browser at all. There is
+  no `*` available here and that is the section's whole subject: the policy
+  allows credentials, no browser accepts credentials beside
+  `Access-Control-Allow-Origin: *`, and so allowing everyone is not the lax end
+  of this setting but a policy no browser client can authenticate against.
 
 ## Docker
 

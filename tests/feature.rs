@@ -767,17 +767,95 @@ async fn named_routes_generate_urls() {
 
 #[tokio::test]
 async fn the_api_group_adds_cors_and_rate_limit_headers() {
+    // A declared origin, answered with itself rather than with `*`. This
+    // asserted `Some("*")` until `config/cors.rs` existed, and the assertion
+    // passed for exactly as long as no browser client tried to authenticate.
     let app = App::boot().await;
     let request = Request::builder()
         .method(Method::GET)
         .uri("/api/posts")
-        .header("origin", "https://app.example")
+        .header("origin", "https://example.com")
         .header("accept", "application/json")
         .build();
 
     let response = app.send(request).await;
-    assert_eq!(response.header("access-control-allow-origin"), Some("*"));
+
+    assert_eq!(response.header("access-control-allow-origin"), Some("https://example.com"));
+    // The half that makes the first half worth having: without this a browser
+    // sends no cookie, so a session-authenticated call arrives anonymous.
+    assert_eq!(response.header("access-control-allow-credentials"), Some("true"));
+    // And a cache must not hand one origin's answer to another, now that the
+    // answer differs per origin.
+    assert!(response.header("vary").unwrap_or_default().contains("Origin"));
     assert!(response.header("x-ratelimit-limit").is_some());
+}
+
+#[tokio::test]
+async fn an_undeclared_origin_gets_no_cors_headers_and_is_served_anyway() {
+    // Both halves are the point. The missing `Access-Control-Allow-Origin` is
+    // what makes a browser refuse to hand the body to the calling page — and
+    // the `200` is the reminder that nothing on the server refused anything.
+    // CORS is a browser rule, so a tool that ignores it sees a working
+    // endpoint, which is why "it works in curl" settles nothing here.
+    let app = App::boot().await;
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/api/posts")
+        .header("origin", "https://somewhere.example")
+        .header("accept", "application/json")
+        .build();
+
+    let response = app.send(request).await;
+
+    response.assert_status(StatusCode::OK);
+    assert_eq!(response.header("access-control-allow-origin"), None);
+    assert_eq!(response.header("access-control-allow-credentials"), None);
+}
+
+#[tokio::test]
+async fn a_route_that_does_not_exist_still_answers_with_the_cors_headers() {
+    // The other thing a global policy buys, and it is worth an assertion
+    // because of how the failure is read. A `404` with no
+    // `Access-Control-Allow-Origin` is reported by the browser as a CORS
+    // error, so a mistyped path sends whoever is debugging it into
+    // `config/cors.rs` — where everything is correct.
+    let app = App::boot().await;
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/api/postz")
+        .header("origin", "https://example.com")
+        .header("accept", "application/json")
+        .build();
+
+    let response = app.send(request).await;
+
+    response.assert_status(StatusCode::NOT_FOUND);
+    assert_eq!(response.header("access-control-allow-origin"), Some("https://example.com"));
+}
+
+#[tokio::test]
+async fn a_preflight_is_answered_by_the_middleware_and_allows_the_token_header() {
+    // `OPTIONS /api/posts` matches no route — the middleware short-circuits it,
+    // which is why a preflight never reaches a controller.
+    //
+    // `authorization` is the entry that has to be in the answer. A browser will
+    // not send it uninvited, and a preflight that omits it does not make the
+    // client drop the header and carry on: the request is never sent at all.
+    let app = App::boot().await;
+    let request = Request::builder()
+        .method(Method::OPTIONS)
+        .uri("/api/posts")
+        .header("origin", "https://example.com")
+        .header("access-control-request-method", "POST")
+        .header("access-control-request-headers", "authorization")
+        .build();
+
+    let response = app.send(request).await;
+
+    response.assert_status(StatusCode::NO_CONTENT);
+    assert_eq!(response.header("access-control-allow-origin"), Some("https://example.com"));
+    assert_eq!(response.header("access-control-allow-credentials"), Some("true"));
+    assert!(response.header("access-control-allow-headers").unwrap().contains("authorization"));
 }
 
 #[tokio::test]

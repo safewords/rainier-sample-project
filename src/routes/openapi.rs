@@ -142,6 +142,13 @@ mod tests {
         // The guard is resolved when the route is compiled, so the container
         // needs one. A manager with no guards registered is enough: nothing
         // here dispatches a request, it only reads the shape of the routes.
+        //
+        // Only the guard, because only the guard is deferred *by a group*. The
+        // CORS policy is deferred too and is not needed here — it is registered
+        // globally, and the global stack is built by the kernel rather than by
+        // `compile`. Which is also how this test noticed the policy moving: it
+        // failed, naming the service the router could not resolve, rather than
+        // compiling a route whose policy came from somewhere else.
         let container = Container::new();
         container
             .instance(rainier_framework::auth::AuthManager::<crate::app::models::User>::new("api"));

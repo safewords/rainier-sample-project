@@ -18,6 +18,7 @@
 //!   storage.rs    where uploaded files live
 //!   kafka.rs      one cluster, three ports — queue, broadcast, relay
 //!   posts.rs      an application's own section
+//!   cors.rs       which origins a browser may call the API from
 //!   server.rs     the timeout and compression nginx would do
 //!   metrics.rs    Prometheus, off by default
 //!   openapi.rs    the generated API document
@@ -76,6 +77,7 @@ use rainier_framework::prelude::*;
 
 pub mod app;
 pub mod cache;
+pub mod cors;
 pub mod database;
 pub mod hashing;
 pub mod kafka;
@@ -107,6 +109,7 @@ pub fn configure(config: &Config, env: &Env) -> Result<()> {
     storage::configure(config, env)?;
     kafka::configure(config, env)?;
     posts::configure(config, env)?;
+    cors::configure(config, env)?;
     server::configure(config, env)?;
 
     // Observability: all three off unless a deployment asks.
@@ -169,6 +172,11 @@ mod tests {
             rainier_framework::keys::FILESYSTEMS.path(),
             keys::KAFKA_BROKERS.path(),
             keys::POSTS_PER_PAGE.path(),
+            // Unreached, this one does not fall back to a default — it falls
+            // back to an *empty* origin list, which is a policy that allows
+            // nobody and looks, from the browser, exactly like a CORS
+            // misconfiguration in the origins it does declare.
+            keys::CORS_ALLOWED_ORIGINS.path(),
             keys::SERVER_REQUEST_TIMEOUT_SECS.path(),
             keys::METRICS_ENABLED.path(),
             keys::OPENAPI_ENABLED.path(),

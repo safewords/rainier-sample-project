@@ -1,7 +1,12 @@
 //! `routes/api.php` — the JSON API.
 //!
-//! Everything is under `/api` and inside the `api` middleware group (CORS plus
-//! a rate limit). The inner group adds the token guard.
+//! Everything is under `/api` and inside the `api` middleware group (a rate
+//! limit). The inner group adds the token guard.
+//!
+//! CORS is not on the group and is not declared here. It is global, because a
+//! browser's preflight is an `OPTIONS` request against a path no route below
+//! accepts `OPTIONS` for — so the router answers `405` and no group middleware
+//! ever runs. See [`kernel::register`].
 //!
 //! Route names get the `api.` prefix from the group, so the URL generator
 //! resolves `api.posts.show`.
