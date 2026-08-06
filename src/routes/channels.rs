@@ -11,6 +11,20 @@
 //! invites — a typo in a pattern, or forgetting to add one — makes a feature
 //! stop working, rather than making a private channel readable by anyone who
 //! guesses its name.
+//!
+//! # What does not belong here
+//!
+//! **Per-session channels.** Every rule in this file answers "may this *user*
+//! subscribe", so a channel authorised here is one every device that user is
+//! signed in on may join. For notifications that is right: an unread count is
+//! a property of the account and identical on every device.
+//!
+//! For anything answering a request it is wrong — a reply built because a
+//! phone asked would be delivered to the laptop as well. Those are named after
+//! a key held in the session and authorised by
+//! [`rainier_framework::broadcasting::authorize_session`], on its own route
+//! with no guard. Adding a pattern here for one would hand it to every device
+//! on the account, which is the thing that shape exists to avoid.
 
 use rainier_framework::broadcast::{ChannelAccess, ChannelParams, ChannelRegistry};
 use rainier_framework::broadcasting::authorize_notifications;
