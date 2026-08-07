@@ -1326,3 +1326,66 @@ async fn the_tag_cloud_counts_only_posts_a_reader_could_reach() {
     assert_eq!(cloud[0].tag_id, rust.id);
     assert_eq!(cloud[0].posts, 1, "the draft and the binned post are not reachable");
 }
+
+// ---- public/ -------------------------------------------------------------
+
+#[tokio::test]
+async fn a_file_in_public_is_served_without_a_route() {
+    // The whole point of a document root: `public/robots.txt` is reachable at
+    // `/robots.txt` because it is there, not because anything declared it.
+    let app = App::boot().await;
+
+    let response = app.send(app.get("/robots.txt")).await;
+
+    response.assert_ok();
+}
+
+#[tokio::test]
+async fn the_built_frontend_is_served_from_public() {
+    // This used to be `AssetController`, a route with its own traversal guard,
+    // because Rainier is the web server and somebody had to serve what Vite
+    // writes. The framework does it now and the URL is unchanged:
+    // `public/build/manifest.json` answers at `/build/manifest.json`.
+    let app = App::boot().await;
+
+    let response = app.send(app.get("/build/manifest.json")).await;
+
+    response.assert_ok();
+}
+
+#[tokio::test]
+async fn a_route_wins_over_a_file_of_the_same_name() {
+    // The one behavioural difference from Laravel, asserted rather than
+    // described: `public/` is the router's fallback, so a declared route is
+    // reached first and a file cannot shadow it.
+    let app = App::boot().await;
+
+    let response = app.send(app.get("/health")).await;
+
+    response.assert_ok().assert_json_path("status", "ok");
+}
+
+#[tokio::test]
+async fn nothing_under_public_climbs_out_of_it() {
+    // Through the real router and the real kernel, not just the resolver's
+    // unit tests: a percent-encoded traversal has to survive whatever the
+    // HTTP layer does to a path before this ever sees it.
+    let app = App::boot().await;
+
+    for hostile in ["/../Cargo.toml", "/%2e%2e/Cargo.toml", "/build/../../Cargo.toml"] {
+        let response = app.send(app.get(hostile)).await;
+        assert_ne!(response.status(), 200, "{hostile} was served");
+    }
+}
+
+#[tokio::test]
+async fn a_dotfile_in_public_is_not_served() {
+    // `.env` sits in the project root rather than `public/`, so this asserts
+    // the rule at the door: a request naming one is refused before anything
+    // looks for it.
+    let app = App::boot().await;
+
+    let response = app.send(app.get("/.env")).await;
+
+    assert_ne!(response.status(), 200);
+}

@@ -2,7 +2,6 @@
 //!
 //! Each action is a plain `async fn`; the router points at it by path.
 
-pub mod asset_controller;
 pub mod auth_controller;
 pub mod home_controller;
 pub mod notification_controller;

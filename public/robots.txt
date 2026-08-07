@@ -1,0 +1,6 @@
+# Served straight from `public/` — no route declares it.
+#
+# The framework wires this directory up at boot when it exists, so adding a
+# file here is the whole of adding a URL.
+User-agent: *
+Disallow: /admin
