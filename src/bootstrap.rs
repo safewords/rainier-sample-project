@@ -341,7 +341,7 @@ async fn connect(mode: Mode, settings: &Config) -> Result<Database> {
 
     let executor = SeaOrmExecutor::connect(&url, &pool)
         .await
-        .map_err(|e| Error::internal(format!("could not connect to `{url}`: {e}")))?;
+        .map_err(|e| Error::internal(format!("could not connect to `{}`: {e}", redact(&url))))?;
 
     // No `bind_executor!` here: `SeaOrmExecutor` belongs to `rainier-drivers`
     // and `Connection` to the framework, so the orphan rule puts that impl out
@@ -427,5 +427,71 @@ mod tests {
         );
 
         assert!(sessions(&env, &database, &cache).is_ok());
+    }
+}
+
+/// A database URL with its password removed.
+///
+/// The connection error used to print the URL verbatim, and the URL carries the
+/// password — so every failed boot put a live database credential in the pod
+/// log. lewd-backend crashlooped ~280 times on 2026-09-17/18 while its
+/// database was down, printing lewd's production password each time.
+///
+/// The line came from the rainier-sample-project template, which is how the
+/// same leak reached lewd, maps-api, billing-api and bdsm-org. identity already
+/// redacted; this mirrors its helper, with one correction below.
+fn redact(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    // The LAST `@` ends the userinfo. A password holding a raw `@` would
+    // otherwise split early and print its tail as part of the host.
+    let Some((userinfo, host)) = rest.rsplit_once('@') else {
+        return url.to_string();
+    };
+    // The FIRST `:` ends the user, so a password holding a `:` does not leak
+    // its tail either.
+    let user = userinfo.split_once(':').map_or(userinfo, |(user, _)| user);
+    format!("{scheme}://{user}:***@{host}")
+}
+
+#[cfg(test)]
+mod redact_tests {
+    use super::redact;
+
+    #[test]
+    fn a_connection_failure_does_not_log_the_password() {
+        assert_eq!(
+            redact("mysql://lewd:hunter2@db.internal:3306/lewd"),
+            "mysql://lewd:***@db.internal:3306/lewd"
+        );
+    }
+
+    #[test]
+    fn a_percent_encoded_password_is_removed_whole() {
+        assert_eq!(
+            redact("mysql://lewd:ryKo7%2BKfa@db:3306/lewd"),
+            "mysql://lewd:***@db:3306/lewd"
+        );
+    }
+
+    #[test]
+    fn a_password_containing_a_colon_does_not_leak_its_tail() {
+        assert_eq!(redact("mysql://user:pa:ss@host/db"), "mysql://user:***@host/db");
+    }
+
+    #[test]
+    fn a_password_containing_an_at_sign_does_not_leak_its_tail() {
+        let r = redact("mysql://user:p@ss@host/db");
+        assert_eq!(r, "mysql://user:***@host/db");
+        assert!(!r.contains("ss@"), "tail of the password leaked: {r}");
+    }
+
+    #[test]
+    fn a_url_with_no_credentials_is_left_alone() {
+        for url in ["sqlite::memory:", "sqlite:///data/app.sqlite", "mysql://db.internal:3306/app"]
+        {
+            assert_eq!(redact(url), url);
+        }
     }
 }
