@@ -18,10 +18,11 @@
 # --- build -------------------------------------------------------------------
 
 # Pinned, so an image built today and one built in six months are the same
-# image. 1.94 rather than the framework's own 1.88 floor, because this image
-# must be able to build *any* sized feature set and enabling a driver raises
-# the floor — the AWS SDKs (`s3`, `sqs`) want 1.94.
-FROM rust:1.94-bookworm AS builder
+# image. 1.99 matches the framework's workspace MSRV; raising the floor
+# below that fails cargo-rainier at install (`requires rustc 1.99 or
+# newer`), and this image installs it as part of the build so that is
+# a hard floor, not an advisory one.
+FROM rust:1.99-bookworm AS builder
 
 WORKDIR /build
 

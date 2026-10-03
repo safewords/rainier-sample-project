@@ -102,6 +102,18 @@ jobs:
       # application's own dependency graph, which is where a bad forward
       # (`redis-cluster` without `redis`) would show up.
       - run: cargo clippy --all-targets ${{ matrix.flags }} -- -D warnings
+
+      # Build the frontend before `cargo test`: one of the integration tests
+      # (`the_built_frontend_is_served_from_public`) asserts that
+      # `/build/manifest.json` answers, which is a file Vite writes into
+      # `public/build/`. Without this step the test fails and reads as a
+      # framework regression rather than a missing CI dependency.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run build
+
       - run: cargo test ${{ matrix.flags }}
 
   migrations:
