@@ -1,4 +1,4 @@
-//! The console entry point — Laravel's `artisan`.
+//! The console entry point.
 //!
 //! ```sh
 //! cargo run -- list                  # every command

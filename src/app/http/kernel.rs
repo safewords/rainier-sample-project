@@ -1,8 +1,8 @@
 //! The HTTP kernel — `app/Http/Kernel.php`.
 //!
-//! Laravel's kernel is three maps: `$middleware` (global), `$routeMiddleware`
-//! (alias → class) and `$middlewareGroups` (name → list of aliases). Two of
-//! those exist only because PHP cannot put a class in a route file and have the
+//! A PHP kernel is three maps: global middleware, aliases (name → class) and
+//! groups (name → list of aliases). Two of those exist only because PHP cannot
+//! put a class in a route file and have the
 //! router mean it.
 //!
 //! Rust can, so this file has:
@@ -100,14 +100,14 @@ pub fn register(registry: &MiddlewareRegistry, trace: Option<Trace>) {
 
 // --- groups ----------------------------------------------------------------
 //
-// Laravel's `$middlewareGroups`, as functions. Note what a function can do that
+// Middleware groups, as functions. Note what a function can do that
 // a map entry cannot: take an argument, call another group, and be found by
 // "go to definition".
 
 /// Pages a browser visits: security headers plus a session.
 ///
-/// Extends the framework's `web` rather than restating it. Laravel's
-/// `$middlewareGroups['web'] = [...]` *replaces* the list, which is how a
+/// Extends the framework's `web` rather than restating it. A PHP group
+/// map's `['web' => [...]]` *replaces* the list, which is how a
 /// deploy quietly loses `StartSession` while adding one thing.
 pub fn web() -> MiddlewareStack {
     groups::web()
@@ -263,7 +263,7 @@ fn cors(settings: &Config) -> HandleCors {
 
 /// The API, authenticated with a bearer token.
 ///
-/// A group built from another group — the composition Laravel spells by
+/// A group built from another group — the composition a PHP group map spells by
 /// listing `'api'` inside another array, except this one is checked.
 pub fn api_authenticated(metrics: Option<Arc<Metrics>>) -> MiddlewareStack {
     api(metrics).with_stack(auth("api"))
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn the_web_group_still_starts_sessions() {
-        // The mistake Laravel's replace-the-array model invites, and the
+        // The mistake a replace-the-array model invites, and the
         // reason `web()` delegates instead of restating: dropping the session
         // fails nothing, and every page in the group quietly has none.
         assert!(

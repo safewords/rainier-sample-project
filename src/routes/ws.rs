@@ -1,7 +1,6 @@
 //! `routes/ws.rs` — WebSocket endpoints.
 //!
-//! Laravel has no counterpart, because Laravel does not hold sockets: it
-//! publishes to a relay and something else holds them. Rainier can do both —
+//! A PHP application cannot hold sockets: it publishes to a relay and something else holds them. Rainier can do both —
 //! see [`channels`](crate::routes::channels) for the other one.
 //!
 //! These run on the **same port** as the HTTP routes. A socket connection

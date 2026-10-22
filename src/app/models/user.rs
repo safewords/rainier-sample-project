@@ -76,7 +76,7 @@ impl Notifiable for User {
 }
 
 impl User {
-    /// Everything they have written — Eloquent's `hasMany(Post::class)`.
+    /// Everything they have written — a has-many relationship.
     ///
     /// ```ignore
     /// let posts = User::posts().load(&users, &*post_repo).await?;   // one query

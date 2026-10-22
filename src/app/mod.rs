@@ -1,4 +1,4 @@
-//! Your application's code — Laravel's `app/`.
+//! Your application's code.
 
 pub mod console;
 pub mod http;

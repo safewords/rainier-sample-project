@@ -1,6 +1,6 @@
 //! Every configuration key this application names, in one place.
 //!
-//! Laravel answers "what settings are there?" by reading `config/`. Here the
+//! A PHP application answers "what settings are there?" by reading `config/`. Here the
 //! answer is this file, and the compiler enforces it: a key that is not
 //! declared cannot be written with a typed call, and a key whose type changes
 //! breaks every reader at once rather than one of them at runtime.

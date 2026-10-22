@@ -1,7 +1,6 @@
 //! `routes/console.php` — the console's command list, and the schedule.
 //!
-//! Laravel splits these across `routes/console.php` and
-//! `App\Console\Kernel::schedule`. Both answer "what this application does when
+//! Commands and the schedule both answer "what this application does when
 //! nothing is asking it over HTTP", so they live together.
 
 use std::time::Duration;

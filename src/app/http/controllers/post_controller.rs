@@ -87,7 +87,6 @@ fn empty_page(page: u64, per_page: u64) -> serde_json::Value {
 /// The lookup and the 404 are both gone from the body: `Bound<Post>` resolves
 /// `{post}` through the model's [route
 /// key](rainier_framework::database::Model::route_key_name), which is the slug.
-/// Laravel's `public function show(Post $post)`.
 ///
 /// Binding does not authorise, so the draft check is still this action's job —
 /// and it is a check, not a filtered query, because the model is already here.

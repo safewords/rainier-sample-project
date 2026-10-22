@@ -1,6 +1,6 @@
-//! Route and command declarations — Laravel's `routes/`.
+//! Route and command declarations.
 //!
-//! Split the same way Laravel splits them, and for the same reason: the groups
+//! Split by group, because the groups
 //! want different middleware. `web` gets session-shaped defaults, `api` gets
 //! CORS and rate limiting, and `console` is not routing at all.
 

@@ -1,4 +1,4 @@
-//! Feature tests — Laravel's `tests/Feature`.
+//! Feature tests.
 //!
 //! These boot the real application and drive the real kernel: real routes,
 //! real middleware, real database, real migrations. Only the mail transport is
@@ -350,14 +350,14 @@ async fn a_post_carries_the_tags_the_pivot_links_to_it() {
 
     let tags = app.resolve::<EntityRepository<Tag>>().unwrap();
     let rust = tags.create(Tag::named("Rust")).await.unwrap();
-    let laravel = tags.create(Tag::named("laravel")).await.unwrap();
+    let web = tags.create(Tag::named("web")).await.unwrap();
 
     // This used to be `db.statement("INSERT INTO post_tag VALUES (…)")`, hand
     // formatted, because the pivot had no model to insert through. It has one
     // now — see `PostTag` — and `attach` is an upsert on the pair, so the second
     // call below is a no-op rather than a constraint violation.
     let links = app.tags();
-    for tag in [&rust, &laravel] {
+    for tag in [&rust, &web] {
         links.attach(post.id, tag.id).await.unwrap();
         links.attach(post.id, tag.id).await.expect("attaching twice is not an error");
     }
@@ -1355,7 +1355,7 @@ async fn the_built_frontend_is_served_from_public() {
 
 #[tokio::test]
 async fn a_route_wins_over_a_file_of_the_same_name() {
-    // The one behavioural difference from Laravel, asserted rather than
+    // The one behavioural difference from a PHP document root, asserted rather than
     // described: `public/` is the router's fallback, so a declared route is
     // reached first and a file cannot shadow it.
     let app = App::boot().await;

@@ -1,7 +1,7 @@
 //! Repositories — where the domain's queries get names.
 //!
-//! Laravel has no counterpart, because Eloquent puts scopes on the model and a
-//! query anywhere it likes. Rainier separates the two: a [model](super::models)
+//! An active-record ORM puts scopes on the model and a query anywhere it
+//! likes. Rainier separates the two: a [model](super::models)
 //! describes a row, and a repository is the only thing that knows how to fetch
 //! one.
 //!

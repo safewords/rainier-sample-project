@@ -1,6 +1,6 @@
 //! Request contracts — `app/Http/Requests`.
 //!
-//! Laravel's form requests: authorise, validate, and bind a typed payload the
+//! Form requests: authorise, validate, and bind a typed payload the
 //! action can trust. A field with no rule never reaches the payload, which is
 //! the mass-assignment protection `$fillable` gives you — obtained from the
 //! rules you already wrote.

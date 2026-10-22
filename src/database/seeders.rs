@@ -23,7 +23,7 @@ pub async fn seed(app: &Application) -> Result<()> {
     };
 
     let seeds = [
-        ("Welcome to Rainier", "A Laravel-shaped MVC framework for Rust.", true),
+        ("Welcome to Rainier", "An MVC framework for Rust.", true),
         ("On request contracts", "Authorise, validate, and bind a typed payload.", true),
         ("A draft nobody can see", "Unpublished posts 404 rather than leak.", false),
     ];

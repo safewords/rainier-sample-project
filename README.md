@@ -1,7 +1,7 @@
 # Rainier Sample Project
 
-A starter application for [Rainier], laid out the way a Laravel project is.
-Clone it, rename it, and build.
+A starter application for [Rainier], laid out the way MVC applications
+usually are. Clone it, rename it, and build.
 
 ```sh
 git clone https://github.com/safewords/rainier-sample-project.git my-app
@@ -22,43 +22,43 @@ Everything is wired and working: models, repositories, a router with groups and
 named routes, request contracts, a token guard, a policy, an event, a queued
 job, mailables, notifications with an in-app bell menu, relationships with
 eager loading, broadcasting with channel authorisation, a WebSocket chat room,
-Blade-style views, and a console command. Delete what you do not need.
+server-rendered views, and a console command. Delete what you do not need.
 
 ```text
 src/
-  main.rs             artisan            — the console entry point
-  bootstrap.rs        bootstrap/app.php  — assembles and boots the app
-  config/             config/*.php       — one module per concern
+  main.rs           — the console entry point
+  bootstrap.rs      — assembles and boots the app
+  config/           — one module per concern
   app/
-    models/           app/Models         — User, Post, Tag, and their relationships
+    models/         — User, Post, Tag, and their relationships
     http/
-      kernel.rs       app/Http/Kernel    — global middleware, and the groups
-      controllers/    app/Http/Controllers
-      middleware/     app/Http/Middleware — an X-Request-Id example
-      requests/       app/Http/Requests  — request contracts
-    repositories/     —                  — where the domain's queries get names
-    providers/        app/Providers      — service registration
-    jobs/             app/Jobs
-    mail/             app/Mail
-    notifications/    app/Notifications  — a message to a recipient, over their channels
-    policies/         app/Policies
-    console/commands/ app/Console/Commands
+      kernel.rs     — global middleware, and the groups
+      controllers/
+      middleware/   — an X-Request-Id example
+      requests/     — request contracts
+    repositories/   — where the domain's queries get names
+    providers/      — service registration
+    jobs/
+    mail/
+    notifications/  — a message to a recipient, over their channels
+    policies/
+    console/commands/
   database/
-    migrations/       database/migrations — one module per migration
-    seeders.rs        database/seeders
+    migrations/     — one module per migration
+    seeders.rs
   routes/
-    channels.rs       routes/channels.php — who may subscribe to what
-    ws.rs             —                  — WebSocket endpoints, on the same port
-    web.rs            routes/web.php
-    api.rs            routes/api.php
-    console.rs        routes/console.php
-resources/views/      resources/views    — templates
-tests/feature.rs      tests/Feature      — end-to-end tests
-Dockerfile            —                  — a two-stage production image
-.github/workflows/    —                  — fmt, clippy, tests, docker
+    channels.rs     — who may subscribe to what
+    ws.rs           — WebSocket endpoints, on the same port
+    web.rs
+    api.rs
+    console.rs
+resources/views/    — templates
+tests/feature.rs    — end-to-end tests
+Dockerfile          — a two-stage production image
+.github/workflows/  — fmt, clippy, tests, docker
 ```
 
-Two entries have no Laravel counterpart, because PHP has nowhere to put them.
+Two entries may be unfamiliar.
 `repositories/` is where a query gets a name — `published_page` rather than a
 `Criteria` each controller assembles. And `migrations/` is a directory of
 modules listed in `mod.rs` rather than files discovered by timestamp, because
@@ -134,7 +134,7 @@ who may subscribe to the private ones.
 ## Two things Rust does differently
 
 Neither is a Rainier decision — both fall out of the language, and both are the
-things a Laravel developer trips over first.
+things a developer arriving from a dynamic language trips over first.
 
 1. **Nothing is autoloaded.** Every directory has a `mod.rs` listing its files.
    Adding a controller means adding one line to

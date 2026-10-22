@@ -1,6 +1,6 @@
 //! `config/server.php` — how the HTTP server itself behaves.
 //!
-//! Laravel has no equivalent: PHP's `max_execution_time` and nginx's
+//! A PHP application has no equivalent: PHP's `max_execution_time` and nginx's
 //! `gzip on;` live outside the application. Rainier *is* the server, so the
 //! two settings that would have belonged to nginx belong here.
 

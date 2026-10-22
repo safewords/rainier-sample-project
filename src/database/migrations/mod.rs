@@ -1,6 +1,6 @@
 //! Migrations — `database/migrations`.
 //!
-//! Laravel has one file per migration, named by timestamp, discovered from the
+//! A PHP application has one file per migration, named by timestamp, discovered from the
 //! directory. This is one **module** per migration, named by prefix, listed in
 //! [`all`] — because Rust does not autoload, and a list you can read beats a
 //! directory scan you cannot.

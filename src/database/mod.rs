@@ -1,4 +1,4 @@
-//! Schema and seed data — Laravel's `database/`.
+//! Schema and seed data.
 
 pub mod migrations;
 pub mod seeders;

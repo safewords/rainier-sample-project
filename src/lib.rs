@@ -1,32 +1,31 @@
 //! Your application.
 //!
-//! The layout mirrors a Laravel project, so if you know where something lives
-//! there, you know where it lives here:
+//! The layout is the usual MVC one:
 //!
 //! ```text
 //! src/
-//!   bootstrap.rs        bootstrap/app.php   — assembles and boots the app
-//!   config/             config/*.php        — one module per concern
+//!   bootstrap.rs      — assembles and boots the app
+//!   config/           — one module per concern
 //!   app/
-//!     models/           app/Models          — entities the framework manages
+//!     models/         — entities the framework manages
 //!     http/
-//!       kernel.rs       app/Http/Kernel.php — global middleware, aliases, groups
-//!       controllers/    app/Http/Controllers
-//!       middleware/     app/Http/Middleware
-//!       requests/       app/Http/Requests   — request contracts (form requests)
-//!     providers/        app/Providers       — service registration
-//!     jobs/             app/Jobs
-//!     mail/             app/Mail
-//!     policies/         app/Policies        — authorisation
-//!     console/commands/ app/Console/Commands
+//!       kernel.rs     — global middleware, aliases, groups
+//!       controllers/
+//!       middleware/
+//!       requests/     — request contracts (form requests)
+//!     providers/      — service registration
+//!     jobs/
+//!     mail/
+//!     policies/       — authorisation
+//!     console/commands/
 //!   database/
-//!     migrations.rs     database/migrations
-//!     seeders.rs        database/seeders
+//!     migrations.rs
+//!     seeders.rs
 //!   routes/
-//!     web.rs            routes/web.php
-//!     api.rs            routes/api.php
-//!     console.rs        routes/console.php
-//! resources/views/      resources/views     — `*.view.html` templates
+//!     web.rs
+//!     api.rs
+//!     console.rs
+//! resources/views/    — `*.view.html` templates
 //! ```
 //!
 //! Two differences worth knowing, both because Rust has no autoloading:

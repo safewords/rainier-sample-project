@@ -90,7 +90,7 @@ impl Model for Post {
 }
 
 impl Post {
-    /// The author — Eloquent's `belongsTo(User::class)`.
+    /// The author — a belongs-to relationship.
     ///
     /// The foreign key is not the convention (`user_id`), so it is named. The
     /// owner key still defaults to the user's primary key.
@@ -103,7 +103,7 @@ impl Post {
         BelongsTo::new().foreign_key("author_id")
     }
 
-    /// The tags attached to it — Eloquent's `belongsToMany(Tag::class)`.
+    /// The tags attached to it — a many-to-many relationship.
     ///
     /// Through `post_tag(post_id, tag_id)`, which is the conventional name and
     /// so needs no column configuration.
@@ -142,7 +142,7 @@ pub struct PostPublished {
     pub post: Post,
 }
 
-/// The same fact, pushed to any browser watching — Laravel's `ShouldBroadcast`.
+/// The same fact, pushed to any browser watching — a broadcast event.
 ///
 /// One type, dispatched in-process *and* broadcast. Nothing is discovered
 /// though: implementing this makes it broadcast**able**, and a listener in

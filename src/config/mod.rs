@@ -206,7 +206,7 @@ mod tests {
             // `StoreConfig::memory()`, `ConnectionConfig::database()` — so
             // `databse` is not a value that fails at boot, it is one that does
             // not compile.
-            ("APP_CIPHER=laravel", "APP_CIPHER", "`php`"),
+            ("APP_CIPHER=legacy", "APP_CIPHER", "`php`"),
         ];
 
         for (env, variable, expected_in_message) in cases {
