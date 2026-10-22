@@ -25,6 +25,7 @@ use crate::app::http::kernel;
 use crate::app::jobs::NotifyAuthor;
 use crate::app::providers::{AppServiceProvider, EventServiceProvider, RepositoryServiceProvider};
 use crate::config;
+use crate::config::services::Services;
 use crate::routes;
 
 /// How the application is wired.
@@ -65,10 +66,44 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
     // the locks and rate limits — see `cache`.
     let cache = cache(&settings).await?;
 
+    // The add-ins' settings — third-party credentials, who the administrators
+    // are. Read here because the add-ins are assembled here: see
+    // `AddInServiceProvider` for why that cannot wait for a provider.
+    let services = Arc::new(Services::for_mode(mode, &env));
+    services.check()?;
+
+    // One transport for every third party the add-ins call — the fake under
+    // test, so a feature test can answer as Stripe or GitHub would.
+    #[cfg(any(
+        feature = "billing-stripe",
+        feature = "sso",
+        feature = "captcha",
+        feature = "notify-discord"
+    ))]
+    let outbound = crate::app::providers::outbound::Outbound::for_mode(mode);
+
+    #[cfg(feature = "accounts")]
+    let addins = Arc::new(crate::app::providers::AddIns::build(
+        mode,
+        &env,
+        &settings,
+        Arc::clone(&services),
+        &database,
+        Arc::clone(cache.store()),
+        #[cfg(any(feature = "billing-stripe", feature = "sso", feature = "captcha"))]
+        outbound.clone(),
+    )?);
+
     let metrics = MetricsSettings::from_config(&settings);
     let telemetry = TelemetrySettings::from_config(&settings);
     let api_docs = OpenApiSettings::from_config(&settings);
 
+    // With the `telemetry` feature the framework exports on its own, from
+    // `TELEMETRY_ENABLED` and `OTEL_EXPORTER_OTLP_ENDPOINT` — every component
+    // already instruments itself, and the `Trace` middleware `kernel.rs`
+    // registers is recognised rather than doubled. Without it, an endpoint is a
+    // setting this binary cannot honour.
+    #[cfg(not(feature = "telemetry"))]
     if telemetry.exports() {
         // Configured to export, and this build cannot. Saying so beats a
         // deployment that believes it is sending spans to a collector that
@@ -94,6 +129,36 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
     if let Some(metrics) = registry.clone() {
         builder = builder.with_instance_arc(metrics);
     }
+
+    builder = builder.with_instance_arc(Arc::clone(&services));
+
+    #[cfg(any(
+        feature = "billing-stripe",
+        feature = "sso",
+        feature = "captcha",
+        feature = "notify-discord"
+    ))]
+    {
+        // The fake on its own as well, so a test can resolve it, queue a
+        // provider's answers, and read back what was sent.
+        if let Some(fake) = &outbound.fake {
+            builder = builder.with_instance_arc(Arc::clone(fake));
+        }
+        builder = builder.with_instance(outbound.clone());
+    }
+
+    #[cfg(feature = "accounts")]
+    {
+        builder = builder.with_provider(crate::app::providers::AddInServiceProvider {
+            addins: Arc::clone(&addins),
+        });
+    }
+
+    // Set by the add-ins' route declaration, which can refuse — a flow switched
+    // on without what it needs — and runs inside a closure that cannot return
+    // the error itself.
+    #[allow(unused_mut, reason = "only the accounts add-in can fail to declare")]
+    let mut declared: Result<()> = Ok(());
 
     // Every job a worker must be able to run. A job missing from here fails at
     // run time with "no job is registered as …", so add to this list whenever
@@ -138,7 +203,7 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
                 let _ = c.set(config::keys::APP_ENV, AppEnv::Testing);
             }
         })
-        .with_sessions(sessions(&env, &database, &cache)?)
+        .with_sessions(sessions(&env, &database, &cache, &services)?)
         // The cache the framework would otherwise have built itself, built from
         // the same declared section it would have read. Supplying one *wins*
         // over `config/cache.rs` — which is exactly the silent divergence the
@@ -181,7 +246,13 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
         .with_schedule(routes::console::schedule)
         .with_middleware({
             let trace = telemetry.middleware();
-            move |registry| kernel::register(registry, trace)
+            #[cfg(feature = "compat-php")]
+            let services = Arc::clone(&services);
+            move |registry| {
+                kernel::register(registry, trace);
+                #[cfg(feature = "compat-php")]
+                kernel::register_compat(registry, &services);
+            }
         })
         .with_events(EventServiceProvider::register_listeners)
         .with_routes(|router| {
@@ -189,9 +260,23 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
             // Routes are tried in declaration order and the first match wins.
             routes::web::routes(router);
             routes::api::routes(router, registry.clone());
+
+            // The add-ins, after the application's own routes.
+            #[cfg(feature = "accounts")]
+            {
+                declared = routes::addins::routes(router, &addins);
+            }
         })
         .boot()
         .await?;
+    declared?;
+
+    // Said now rather than while the add-ins were assembled, which was before
+    // there was a log to say it in.
+    #[cfg(feature = "accounts")]
+    for notice in &addins.notices {
+        tracing::warn!("{notice}");
+    }
 
     // The document needs the *compiled* router, which only exists once the
     // application has booted — so it is rendered here and bound, rather than
@@ -211,7 +296,12 @@ pub async fn boot(mode: Mode) -> Result<Arc<Application>> {
 /// A function rather than a line in the builder because the driver is a
 /// branch, and a branch in the middle of a builder chain is where a wiring
 /// mistake hides.
-fn sessions(env: &Env, database: &Database, cache: &CacheManager) -> Result<SessionManager> {
+fn sessions(
+    env: &Env,
+    database: &Database,
+    cache: &CacheManager,
+    services: &Services,
+) -> Result<SessionManager> {
     let lifetime = chrono::Duration::seconds(env.int("SESSION_LIFETIME", 7200));
 
     // An exhaustive `match` on a closed set, not a string compare with a
@@ -260,6 +350,36 @@ fn sessions(env: &Env, database: &Database, cache: &CacheManager) -> Result<Sess
                 .unwrap_or_else(|_| KeyRing::new(Key::generate())),
         ))),
     };
+
+    // Running beside a PHP application: a browser arriving with only its
+    // session is read through to it, once, and carried on in ours. Off unless
+    // `compat-php` is built and `PHP_APP_KEY` names the other side's key.
+    #[cfg(feature = "compat-php")]
+    let store = match crate::app::http::kernel::php_keys(services) {
+        Some(php_keys) => {
+            use rainier_framework::compat::php::cache::PhpCache;
+            use rainier_framework::compat::php::cookie::EncryptedCookies;
+            use rainier_framework::compat::php::session::{
+                CacheSessionSource, ForeignSessionStore,
+            };
+
+            let cookies = EncryptedCookies::new(php_keys.clone());
+            let source = CacheSessionSource::new(PhpCache::new(
+                Arc::clone(cache.store()),
+                env.string("PHP_CACHE_PREFIX", ""),
+            ));
+            Arc::new(ForeignSessionStore::new(
+                store,
+                Arc::new(source),
+                cookies,
+                services.php_session_cookie.clone(),
+                &php_keys,
+            )?) as Arc<dyn SessionStore>
+        }
+        None => store,
+    };
+    #[cfg(not(feature = "compat-php"))]
+    let _ = services;
 
     Ok(SessionManager::with_config(
         store,
@@ -403,7 +523,8 @@ mod tests {
             ),
         );
 
-        let err = sessions(&env, &database, &cache).expect_err("`shard` is not declared");
+        let err = sessions(&env, &database, &cache, &Services::from_env(&env))
+            .expect_err("`shard` is not declared");
 
         assert!(err.message().contains("SESSION_STORE"), "{}", err.message());
         // And it lists what *is* declared, so the fix is a read rather than a
@@ -426,7 +547,7 @@ mod tests {
             ),
         );
 
-        assert!(sessions(&env, &database, &cache).is_ok());
+        assert!(sessions(&env, &database, &cache, &Services::from_env(&env)).is_ok());
     }
 }
 

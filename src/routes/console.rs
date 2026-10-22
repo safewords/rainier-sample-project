@@ -17,7 +17,13 @@ use crate::app::console::commands::SeedCommand;
 /// `migrate`, `queue:work`, `schedule:run` — and your own are registered on
 /// top.
 pub fn commands() -> Console {
-    rainier_framework::console("app").register(SeedCommand)
+    let console = rainier_framework::console("app").register(SeedCommand);
+
+    // Registering OAuth clients, when this build is an OAuth server.
+    #[cfg(feature = "oauth-server")]
+    let console = console.register(crate::app::console::commands::OAuthClientCommand);
+
+    console
 }
 
 /// Everything that runs on a clock.

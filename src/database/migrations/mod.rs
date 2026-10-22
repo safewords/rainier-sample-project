@@ -16,6 +16,7 @@
 //!   m0006_create_tags.rs          another table from a model
 //!   m0007_create_post_tag.rs      a pivot: two keys, no model
 //!   m0008_posts_add_excerpt.rs    an alter, with a derived rollback
+//!   m0009 … m0018                 the add-ins' tables, created in every build
 //! ```
 //!
 //! Each module exposes one `pub fn` returning a
@@ -54,6 +55,16 @@ pub mod m0005_normalise_emails;
 pub mod m0006_create_tags;
 pub mod m0007_create_post_tag;
 pub mod m0008_posts_add_excerpt;
+pub mod m0009_create_email_verifications;
+pub mod m0010_create_two_factor_enrolments;
+pub mod m0011_create_passkeys;
+pub mod m0012_create_social_accounts;
+pub mod m0013_create_billing_customers;
+pub mod m0014_create_subscriptions;
+pub mod m0015_create_oauth_clients;
+pub mod m0016_create_oauth_access_tokens;
+pub mod m0017_create_oauth_refresh_tokens;
+pub mod m0018_create_oauth_auth_codes;
 
 /// Every migration, in order.
 ///
@@ -71,6 +82,17 @@ pub fn all() -> Migrator {
         .add(m0006_create_tags::migration())
         .add(m0007_create_post_tag::migration())
         .add(m0008_posts_add_excerpt::migration())
+        // The add-ins' tables. Created in every build — see `m0009`.
+        .add(m0009_create_email_verifications::migration())
+        .add(m0010_create_two_factor_enrolments::migration())
+        .add(m0011_create_passkeys::migration())
+        .add(m0012_create_social_accounts::migration())
+        .add(m0013_create_billing_customers::migration())
+        .add(m0014_create_subscriptions::migration())
+        .add(m0015_create_oauth_clients::migration())
+        .add(m0016_create_oauth_access_tokens::migration())
+        .add(m0017_create_oauth_refresh_tokens::migration())
+        .add(m0018_create_oauth_auth_codes::migration())
         // A framework component that needs a table brings its own migration.
         // The notification channel's rows are what the in-app list reads.
         .merge(rainier_framework::notifications::DatabaseChannel::migrations())
@@ -102,6 +124,16 @@ mod tests {
                 "0006_create_tags",
                 "0007_create_post_tag",
                 "0008_posts_add_excerpt",
+                "0009_create_email_verifications",
+                "0010_create_two_factor_enrolments",
+                "0011_create_passkeys",
+                "0012_create_social_accounts",
+                "0013_create_billing_customers",
+                "0014_create_subscriptions",
+                "0015_create_oauth_clients",
+                "0016_create_oauth_access_tokens",
+                "0017_create_oauth_refresh_tokens",
+                "0018_create_oauth_auth_codes",
                 "rainier_notify_0001_notifications",
                 "rainier_queue_0001_jobs",
                 "rainier_queue_0002_failed_jobs",
@@ -122,6 +154,16 @@ mod tests {
             "m0006_create_tags",
             "m0007_create_post_tag",
             "m0008_posts_add_excerpt",
+            "m0009_create_email_verifications",
+            "m0010_create_two_factor_enrolments",
+            "m0011_create_passkeys",
+            "m0012_create_social_accounts",
+            "m0013_create_billing_customers",
+            "m0014_create_subscriptions",
+            "m0015_create_oauth_clients",
+            "m0016_create_oauth_access_tokens",
+            "m0017_create_oauth_refresh_tokens",
+            "m0018_create_oauth_auth_codes",
         ];
 
         for (module, name) in modules.iter().zip(all().names()) {

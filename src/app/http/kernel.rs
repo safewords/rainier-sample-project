@@ -113,6 +113,91 @@ pub fn web() -> MiddlewareStack {
     groups::web()
 }
 
+/// Pages and forms a browser submits: [`web`], plus CSRF protection.
+///
+/// The account add-ins' routes live here. A session cookie is sent by the
+/// browser on its own, which is exactly what lets another site submit a form
+/// *as* the user; `VerifyCsrfToken` refuses any write that does not also carry
+/// the session's token — in a `_token` field, or echoed from the `XSRF-TOKEN`
+/// cookie in an `X-XSRF-TOKEN` header, which is what a front end's HTTP client
+/// does without being asked.
+///
+/// Not on [`web`] itself, which the original `/login` still uses: that route
+/// answers with an API token rather than a session, and a client that only
+/// ever holds tokens has no cookie to forge.
+///
+/// With `compat-php` and a `PHP_APP_KEY`, the token a PHP application put in
+/// its own encrypted `XSRF-TOKEN` cookie is accepted too — see
+/// [`register_compat`].
+#[cfg(feature = "accounts")]
+pub fn browser(services: &crate::config::services::Services) -> MiddlewareStack {
+    use rainier_framework::session::csrf::VerifyCsrfToken;
+
+    let csrf = VerifyCsrfToken::new();
+
+    #[cfg(feature = "compat-php")]
+    let csrf = match php_cookies(services) {
+        Some(cookies) => {
+            csrf.codec(Arc::new(rainier_framework::compat::php::csrf::EncryptedXsrf::new(cookies)))
+        }
+        None => csrf,
+    };
+    #[cfg(not(feature = "compat-php"))]
+    let _ = services;
+
+    web().with(csrf)
+}
+
+/// A logged-in browser session, through the `web` guard.
+///
+/// A [`Member`](crate::app::models::Member), not a `User`: the session guard
+/// hands back the account view the add-ins work with. Resolved for the same
+/// reason [`auth`] is — the manager is bound after routes are declared.
+#[cfg(feature = "accounts")]
+pub fn web_auth() -> MiddlewareStack {
+    Authenticate::<crate::app::models::Member>::resolved_with_guard("web")
+}
+
+/// The PHP application's key, when one is configured.
+#[cfg(feature = "compat-php")]
+pub fn php_keys(
+    services: &crate::config::services::Services,
+) -> Option<rainier_framework::crypt::KeyRing> {
+    let key = services.php_app_key.as_deref()?;
+    rainier_framework::crypt::KeyRing::from_base64(key.trim_start_matches("base64:"), &[])
+        .map_err(|e| tracing::error!(error = %e.message(), "PHP_APP_KEY is not a base64 key"))
+        .ok()
+}
+
+/// The PHP application's cookie encrypter, when its key is configured.
+#[cfg(feature = "compat-php")]
+pub fn php_cookies(
+    services: &crate::config::services::Services,
+) -> Option<rainier_framework::compat::php::cookie::EncryptedCookies> {
+    php_keys(services).map(rainier_framework::compat::php::cookie::EncryptedCookies::new)
+}
+
+/// Running beside a PHP application: adopt its sessions.
+///
+/// Global, and before anything reads the request's cookies: a browser arriving
+/// with only the PHP application's session cookie is given a Rainier session
+/// carrying the same login, so moving a route across does not sign anybody
+/// out. The PHP cookie is never rewritten, so the other application keeps
+/// working beside this one. The session store underneath is wrapped in
+/// `bootstrap.rs`.
+#[cfg(feature = "compat-php")]
+pub fn register_compat(
+    registry: &MiddlewareRegistry,
+    services: &crate::config::services::Services,
+) {
+    if services.php_app_key.is_some() {
+        registry.global(rainier_framework::compat::php::session::AdoptForeignSession::new(
+            services.php_session_cookie.clone(),
+            services.session_cookie.clone(),
+        ));
+    }
+}
+
 /// The JSON API: a rate limit, and no session.
 ///
 /// A session row and a `Set-Cookie` per call would be pure overhead for a

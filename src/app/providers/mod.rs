@@ -3,9 +3,20 @@
 //! Where services are bound into the container. Registered in
 //! `src/bootstrap.rs`, in order.
 
+#[cfg(feature = "accounts")]
+pub mod addin_provider;
 pub mod app_provider;
+#[cfg(any(
+    feature = "billing-stripe",
+    feature = "sso",
+    feature = "captcha",
+    feature = "notify-discord"
+))]
+pub mod outbound;
 pub mod repository_provider;
 
+#[cfg(feature = "accounts")]
+pub use addin_provider::{AddInServiceProvider, AddIns};
 pub use app_provider::{AppServiceProvider, EventServiceProvider};
 pub use repository_provider::RepositoryServiceProvider;
 

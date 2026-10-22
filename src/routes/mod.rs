@@ -4,6 +4,8 @@
 //! want different middleware. `web` gets session-shaped defaults, `api` gets
 //! CORS and rate limiting, and `console` is not routing at all.
 
+#[cfg(feature = "accounts")]
+pub mod addins;
 pub mod api;
 pub mod channels;
 pub mod console;

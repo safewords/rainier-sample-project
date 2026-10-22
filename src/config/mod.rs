@@ -23,6 +23,7 @@
 //!   metrics.rs    Prometheus, off by default
 //!   openapi.rs    the generated API document
 //!   telemetry.rs  OpenTelemetry
+//!   services.rs   third-party credentials and the add-ins' settings
 //! ```
 //!
 //! Read any of it back with the `Config` facade:
@@ -88,6 +89,7 @@ pub mod openapi;
 pub mod posts;
 pub mod queue;
 pub mod server;
+pub mod services;
 pub mod session;
 pub mod storage;
 pub mod telemetry;

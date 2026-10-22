@@ -54,10 +54,22 @@
 //! the database handle and the event dispatcher are wired in exactly one place
 //! — see [`RepositoryServiceProvider`](super::providers::RepositoryServiceProvider).
 
+#[cfg(feature = "accounts")]
+pub mod account_store;
+#[cfg(feature = "oauth-server")]
+pub mod oauth_store;
 pub mod post_repository;
+#[cfg(feature = "billing-stripe")]
+pub mod subscription_repository;
 pub mod tag_repository;
 pub mod user_repository;
 
+#[cfg(feature = "accounts")]
+pub use account_store::AccountStore;
+#[cfg(feature = "oauth-server")]
+pub use oauth_store::DatabaseOAuthStore;
 pub use post_repository::PostRepository;
+#[cfg(feature = "billing-stripe")]
+pub use subscription_repository::SubscriptionRepository;
 pub use tag_repository::{TagCount, TagRepository};
 pub use user_repository::UserRepository;

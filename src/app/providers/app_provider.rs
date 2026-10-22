@@ -135,9 +135,27 @@ impl AppServiceProvider {
             let provider: Arc<dyn UserProvider<User>> =
                 Arc::new(RepositoryUserProvider::new(users, hasher));
 
-            // One guard here. Add a `SessionGuard` under the name "web" for a
-            // cookie-based front end, and routes can pick with `auth:web`.
-            Ok(AuthManager::<User>::new("api").register(Arc::new(TokenGuard::new("api", provider))))
+            // One guard here for the bearer tokens `/login` hands out. The
+            // browser's session guard is the `accounts` add-in's, over its own
+            // user type — see `AddInServiceProvider`.
+            let manager = AuthManager::<User>::new("api")
+                .register(Arc::new(TokenGuard::new("api", Arc::clone(&provider))));
+
+            // And the OAuth server's tokens, under `oauth`, for `/api/v1`.
+            #[cfg(feature = "oauth-server")]
+            let manager = {
+                use rainier_framework::oauth_server::{OAuthGuard, OAuthStore};
+
+                let addins = container.resolve::<crate::app::providers::AddIns>()?;
+                manager.register(Arc::new(OAuthGuard::new(
+                    "oauth",
+                    addins.oauth.server.verifier(),
+                    Arc::clone(&addins.oauth.store) as Arc<dyn OAuthStore>,
+                    provider,
+                )))
+            };
+
+            Ok(manager)
         });
     }
 
@@ -216,10 +234,19 @@ impl AppServiceProvider {
             // database one is what survives a reload; the broadcast one is
             // what makes the bell move without one; mail is what reaches
             // someone who has closed the tab.
-            Ok(Notifier::new()
+            let notifier = Notifier::new()
                 .with_arc(container.resolve::<DatabaseChannel>()?)
                 .with(BroadcastChannel::new(container.resolve::<Broadcasting>()?))
-                .with(MailChannel::new(container.resolve::<Mailer>()?)))
+                .with(MailChannel::new(container.resolve::<Mailer>()?));
+
+            // Discord, over the same outbound transport as every other
+            // third party — the fake under test.
+            #[cfg(feature = "notify-discord")]
+            let notifier = notifier.with(rainier_framework::notify::DiscordChannel::webhooks(
+                Arc::clone(&container.resolve::<crate::app::providers::outbound::Outbound>()?.http),
+            ));
+
+            Ok(notifier)
         });
     }
 }
@@ -283,6 +310,33 @@ impl EventServiceProvider {
         // instead of lost.
         events.listen(|event: Arc<PostPublished>| async move {
             Queue::instance().dispatch(NotifyAuthor { post_id: event.post.id }).await?;
+            Ok(())
+        });
+
+        // And the community's Discord, when a webhook is configured. Sent in
+        // the listener for brevity; a busy application would queue it like
+        // the author's notification above, so Discord being slow could not
+        // slow a publish.
+        #[cfg(feature = "notify-discord")]
+        events.listen(|event: Arc<PostPublished>| async move {
+            use crate::app::notifications::{Community, PostAnnounced};
+            use crate::config::services::Services;
+
+            let app = rainier_framework::container::facade_application();
+            let Some(webhook) = app.resolve::<Services>()?.discord_webhook.clone() else {
+                return Ok(());
+            };
+            let url = format!("{}/posts/{}", app.resolve::<Services>()?.app_url, event.post.slug);
+
+            // A receipt, not an error: a Discord outage is recorded on it and
+            // logged, and the publish it is reacting to has already happened.
+            let receipt = app
+                .resolve::<Notifier>()?
+                .send(&Community { webhook }, &PostAnnounced { post: event.post.clone(), url })
+                .await?;
+            if !receipt.failures().is_empty() {
+                tracing::warn!(post = %event.post.slug, "the Discord announcement was not delivered");
+            }
             Ok(())
         });
     }

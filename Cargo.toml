@@ -77,6 +77,67 @@ mail-mailgun = ["rainier-framework/mail-mailgun"]
 mail-sendgrid = ["rainier-framework/mail-sendgrid"]
 mail-resend = ["rainier-framework/mail-resend"]
 
+# --- add-ins ----------------------------------------------------------------
+#
+# Off by default, each one: a default build compiles none of the code behind
+# them, and the README's "Add-ins" section lists the routes each one mounts.
+# Their tables are created in every build regardless — see
+# `database/migrations` — so turning one on is never a schema change.
+#
+# Everything below `accounts` builds on it: the browser session and the `web`
+# guard it introduces are what checkout, sign-in with GitHub, the consent
+# screen and impersonation all hang off.
+
+# Registration, login with lockout, password reset, email verification and
+# password confirmation, mounted under `/account`. Brings the `web` session
+# guard, CSRF on browser routes, and impersonation for admins.
+accounts = ["rainier-framework/accounts"]
+# TOTP with recovery codes, and the challenge after a right password.
+two-factor = ["accounts", "rainier-framework/two-factor"]
+# WebAuthn passkeys — registration and passwordless sign-in.
+passkeys = ["accounts", "rainier-framework/passkeys"]
+# "Sign in with GitHub", and any OpenID Connect issuer.
+sso = ["accounts", "rainier-framework/sso"]
+# Stripe Checkout, the billing portal, and verified webhooks that keep a local
+# copy of each subscription.
+billing-stripe = ["accounts", "rainier-framework/billing-stripe"]
+# An OAuth 2.0 server: `/oauth/token`, a consent screen, and API routes that
+# accept the tokens it issues.
+oauth-server = ["accounts", "rainier-framework/oauth-server"]
+# A span for every request, query, cache call, job and mail, and queue
+# metrics — configured entirely by `TELEMETRY_ENABLED` and `OTEL_*`.
+telemetry = ["rainier-framework/telemetry"]
+# A human check on registration.
+captcha = ["accounts", "rainier-framework/captcha"]
+# Published posts announced in a Discord channel.
+notify-discord = ["rainier-framework/notify-discord"]
+# Running beside a PHP application during a migration: its sessions and CSRF
+# tokens accepted here. Not part of `add-ins` — it is for one situation.
+compat-php = ["accounts", "rainier-framework/compat-php"]
+
+# Every add-in except `compat-php`.
+add-ins = [
+    "accounts",
+    "two-factor",
+    "passkeys",
+    "sso",
+    "billing-stripe",
+    "oauth-server",
+    "telemetry",
+    "captcha",
+    "notify-discord",
+]
+
+# RSA key generation is the slow part of booting with `oauth-server` and no
+# `OAUTH_PRIVATE_KEY` — every feature test boots an application, and an
+# unoptimised big-integer library makes each one wait seconds. Optimising just
+# these two keeps the rest of the debug build debuggable.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 

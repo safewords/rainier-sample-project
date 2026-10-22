@@ -35,6 +35,10 @@
 //! knowing. The controller does not know an email goes out; the event does not
 //! know a queue exists; the notification does not know the address.
 
+#[cfg(feature = "notify-discord")]
+pub mod post_announced;
 pub mod post_live;
 
+#[cfg(feature = "notify-discord")]
+pub use post_announced::{Community, PostAnnounced};
 pub use post_live::PostLive;
