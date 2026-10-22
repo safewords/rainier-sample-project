@@ -85,7 +85,21 @@ COPY ${ENV_FILE} .env.build
 # what the environment selects. `--list` is the scripting mode: the bare
 # comma-separated set, and a selection nothing forwards fails the build here,
 # loudly.
-RUN cargo rainier features --env .env.build --list > .features \
+#
+# Add-ins are never inferred from the source: which of them an image carries is
+# a product decision, so it is *named*, as `RAINIER_ADDINS` in the env file —
+#
+#   printf 'CACHE_DRIVER=redis\nRAINIER_ADDINS=accounts,two-factor,billing-stripe\n' > .env.build
+#
+# — or, without editing the file, as a build argument appended to it:
+#
+#   docker build --build-arg ADDINS=accounts,two-factor,billing-stripe .
+#
+# Either way the sizer validates the names and fails the build on one that is
+# not an add-in. Neither: an image with none of them, which is the default.
+ARG ADDINS=""
+RUN if [ -n "$ADDINS" ]; then printf '\nRAINIER_ADDINS=%s\n' "$ADDINS" >> .env.build; fi \
+ && cargo rainier features --env .env.build --list > .features \
  && echo "sized with features: [$(cat .features)]"
 
 # BuildKit cache mounts do what a stub-crate dance used to: the registry and

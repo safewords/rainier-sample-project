@@ -167,6 +167,64 @@ things a Laravel developer trips over first.
 | config section | `config/` | one line in `config/mod.rs` |
 | cache or session driver | — | `.env`, plus the cargo feature |
 
+## Add-ins
+
+The framework's optional pieces, each wired into this application behind a
+cargo feature of the same name. A default build compiles none of them; the
+tables they use are created in every build, so turning one on is never a
+schema change.
+
+```sh
+cargo run --features add-ins -- serve              # all of them
+cargo run --features accounts,two-factor -- serve  # or some
+cargo test --features add-ins
+```
+
+| Feature | What it adds | Configure with |
+|---|---|---|
+| `accounts` | registration, login with lockout, logout, password reset, email verification, password confirmation and change — under `/account`, on a session, with CSRF; `GET /account` for verified members; `/admin/impersonate/*` for `ADMIN_EMAILS` | `APP_URL`, `ADMIN_EMAILS` |
+| `two-factor` | TOTP enrolment, recovery codes, and the challenge after a right password | — |
+| `passkeys` | registering a passkey, and signing in with one | `APP_URL` (the origin passkeys are bound to) |
+| `sso` | `/auth/{provider}/redirect` and `/callback` — GitHub, and any OpenID Connect issuer | `GITHUB_CLIENT_*`, `OIDC_*` |
+| `billing-stripe` | `POST /billing/checkout`, `POST /billing/portal`, `GET /billing/pro` for subscribers, and `POST /stripe/webhook` keeping a local copy of each subscription | `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE` |
+| `oauth-server` | `/oauth/authorize` (consent), `/oauth/token`, `/oauth/revoke`, and `GET /api/v1/me` for tokens with the `account` scope; `cargo run -- oauth:client` registers clients | `OAUTH_PRIVATE_KEY` |
+| `telemetry` | a span for every request, query, cache call, job and mail, and queue metrics | `TELEMETRY_ENABLED`, `OTEL_*`, `WORKER_METRICS_ADDRESS` |
+| `captcha` | a Turnstile check in front of registration | `CAPTCHA_SECRET`, `CAPTCHA_HOSTNAME` |
+| `notify-discord` | published posts announced in a Discord channel | `DISCORD_WEBHOOK_URL` |
+| `compat-php` | running beside a PHP application: its signed-in sessions and CSRF tokens accepted here | `PHP_APP_KEY`, `PHP_SESSION_COOKIE` |
+
+`add-ins` is every one except `compat-php`, which is for one situation.
+Everything after `accounts` builds on it — the browser session and its `web`
+guard are what checkout, "sign in with GitHub", the consent screen and
+impersonation all hang off.
+
+Where it lives:
+
+| | |
+|---|---|
+| assembly, in one place | `app/providers/addin_provider.rs` |
+| the routes | `routes/addins.rs` |
+| what is read from the environment | `config/services.rs` |
+| the add-ins' tables, and the ports over them | `app/models/account_state.rs`, `app/models/oauth.rs`, `app/repositories/account_store.rs`, `oauth_store.rs`, `subscription_repository.rs` |
+| the account view of a user | `app/models/member.rs` — a `User` plus what the add-ins know about them |
+| their tests | `tests/addins.rs` — a cookie jar, and the providers answering from a fake |
+
+A front end posting to the account routes reads the `XSRF-TOKEN` cookie
+(`GET /account/csrf` hands one out) and sends it back as `X-XSRF-TOKEN`:
+
+```sh
+curl -c jar -b jar localhost:8000/account/csrf
+curl -c jar -b jar -H "x-xsrf-token: $(awk '/XSRF-TOKEN/ {print $7}' jar)" \
+     -H 'accept: application/json' -H 'content-type: application/json' \
+     -d '{"name":"Ada","email":"ada@example.com","password":"correct horse battery","password_confirmation":"correct horse battery"}' \
+     localhost:8000/account/register
+```
+
+A Docker image carries only the add-ins its build environment names, as
+`RAINIER_ADDINS=accounts,billing-stripe` in `.env.build` or
+`docker build --build-arg ADDINS=accounts,billing-stripe .` — the sizer never
+infers one from the source. See the Dockerfile.
+
 ## Testing
 
 ```sh

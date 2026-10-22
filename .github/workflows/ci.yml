@@ -76,6 +76,11 @@ jobs:
           - { name: redis, flags: "--features redis" }
           - { name: redis-cluster, flags: "--features redis-cluster" }
           - { name: memcached, flags: "--features memcached" }
+          # Every add-in at once, and the migration one on its own — their
+          # feature tests live in `tests/addins.rs` and exist only in these
+          # builds.
+          - { name: add-ins, flags: "--features add-ins" }
+          - { name: compat-php, flags: "--features compat-php" }
     steps:
       - uses: actions/checkout@v4
       # The ARC runner image has no C toolchain; see the action.
@@ -181,6 +186,10 @@ jobs:
       # repo deliberately does not commit one. CI builds the default-sized
       # image: driver selections only, never secrets — this file enters the
       # builder layers and the build cache.
+      #
+      # No `RAINIER_ADDINS` and no `ADDINS` build argument, so this is the
+      # default image with none of the add-ins compiled in: the sizer never
+      # infers one from the source, so naming none builds none.
       - name: write the sizing env file
         run: |
           printf 'CACHE_DRIVER=memory\nMAIL_DRIVER=log\n' > .env.build
