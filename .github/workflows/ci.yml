@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
   # The framework is a git dependency with no version to pin against, so `main`
   # moving is a change to this application's build with no commit here to
   # trigger it. A weekly run is what notices.
