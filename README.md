@@ -459,9 +459,11 @@ the dependency.
 the framework is a git dependency with no version to pin against, so `main`
 moving changes this build with no commit here to trigger it.
 
-The fmt and clippy gates also run as a committed pre-commit hook — enable it
-once per clone with `git config core.hooksPath .githooks`. Bypass once with
-`--no-verify`, or skip only the lint with `SKIP_CLIPPY=1 git commit …`.
+The fmt and clippy gates also run as a committed pre-commit hook. It refuses
+the commit on `cargo fmt --all --check` or `cargo clippy --all-targets -- -D warnings`,
+which is the check job. In a devenv checkout, `make rust-hooks` points git at
+it. A standalone clone: `git config core.hooksPath .githooks`. Bypass once
+with `--no-verify`.
 
 | Job | Checks |
 |---|---|

@@ -1,50 +1,43 @@
 #!/usr/bin/env bash
-# Pre-commit: auto-format staged Rust files and run clippy before the commit
-# lands — the same two gates CI runs, moved to where the fix is cheapest.
-# Enable once per clone:
+# Pre-commit gate. Same two commands as the GitHub Actions check that blocks
+# a deploy, and the same step / ok output as scripts/identity-ci-push.sh:
+# check, and refuse the commit. This file does not rewrite the tree.
 #
-#     git config core.hooksPath .githooks
+# Git runs it only when core.hooksPath is .githooks. In the devenv checkout,
+# `make rust-hooks` (also run by `make clone` and `make init`) sets that.
+# A standalone clone: `git config core.hooksPath .githooks`.
+# `git commit --no-verify` is the one bypass.
 #
-# Only runs when a *.rs or Cargo.* file is staged, so a docs-only commit is
-# not blocked on a compile. Bypass once with `git commit --no-verify`, or
-# skip only clippy with `SKIP_CLIPPY=1 git commit …`.
+# Docs-only commits skip the compile. The gate runs when a staged file can
+# change what rustfmt or clippy would say.
 set -euo pipefail
 
-mapfile -t files < <(git diff --cached --name-only --diff-filter=ACM -- '*.rs' 'Cargo.toml' 'Cargo.lock' || true)
+if [[ -t 1 ]]; then
+	BOLD=$'\e[1m'; RED=$'\e[31m'; GREEN=$'\e[32m'; BLUE=$'\e[34m'; RESET=$'\e[0m'
+else
+	BOLD=""; RED=""; GREEN=""; BLUE=""; RESET=""
+fi
+
+step() { echo; echo "${BOLD}${BLUE}==> $*${RESET}"; }
+ok()   { echo "${GREEN}✓${RESET} $*"; }
+die()  { echo "${RED}✗${RESET} $*" >&2; exit 1; }
+
+files=()
+diff_out="$(git diff --cached --name-only --diff-filter=ACM -- '*.rs' 'Cargo.toml' 'Cargo.lock' 'rustfmt.toml')"
+while IFS= read -r line; do
+	[[ -n "$line" ]] && files+=("$line")
+done <<< "$diff_out"
 
 if [[ ${#files[@]} -eq 0 ]]; then
-    exit 0
+	exit 0
 fi
 
-if ! command -v cargo >/dev/null 2>&1; then
-    echo "pre-commit: cargo not on PATH — install via rustup" >&2
-    exit 1
-fi
+command -v cargo >/dev/null 2>&1 || die "missing required command: cargo"
 
-# ---- rustfmt ----------------------------------------------------------------
-#
-# CI would self-heal drift on main anyway — this catches it before it
-# becomes a bot commit on top of yours.
-if ! cargo fmt --all; then
-    echo "pre-commit: cargo fmt failed; fix the errors above or commit with --no-verify" >&2
-    exit 1
-fi
+step "cargo fmt --all --check"
+cargo fmt --all --check
+ok "fmt clean"
 
-# Re-stage the formatted versions, so what lands is what was formatted.
-for f in "${files[@]}"; do
-    [[ -f "$f" ]] && git add -- "$f"
-done
-
-# ---- clippy -----------------------------------------------------------------
-if [[ "${SKIP_CLIPPY:-0}" == "1" ]]; then
-    echo "pre-commit: SKIP_CLIPPY=1 — skipping cargo clippy"
-    exit 0
-fi
-
-# Default features, matching CI's check job; the feature matrix belongs to
-# the test pipeline, not to every commit.
-echo "pre-commit: cargo clippy --all-targets -- -D warnings"
-if ! cargo clippy --all-targets --quiet -- -D warnings; then
-    echo "pre-commit: clippy failed — fix the warnings above, or commit with SKIP_CLIPPY=1 / --no-verify" >&2
-    exit 1
-fi
+step "cargo clippy --all-targets -- -D warnings"
+cargo clippy --all-targets -- -D warnings
+ok "clippy clean"
