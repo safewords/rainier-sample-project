@@ -11,6 +11,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Link with mold, as the org's other Rust builds do. Since Rust 1.90
+  # linux-gnu links with the bundled rust-lld; `linker-features=-lld` turns
+  # that off and `-fuse-ld=mold` has cc hand the link to mold.
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C linker-features=-lld -C link-arg=-fuse-ld=mold"
   RUST_BACKTRACE: 1
 
 concurrency:
@@ -35,6 +39,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy
+      - uses: rui314/setup-mold@v1
+        with:
+          mold-version: 3.0.0
+          make-default: false
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo fmt --all
@@ -90,6 +98,10 @@ jobs:
           # runner's rustup install is minimal-profile — only the hosted
           # images happened to preinstall the component.
           components: clippy
+      - uses: rui314/setup-mold@v1
+        with:
+          mold-version: 3.0.0
+          make-default: false
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.name }}
@@ -128,6 +140,10 @@ jobs:
       # The ARC runner image has no C toolchain; see the action.
       - uses: ./.github/actions/system-deps
       - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: rui314/setup-mold@v1
+        with:
+          mold-version: 3.0.0
+          make-default: false
       - uses: Swatinem/rust-cache@v2
 
       # Against a real SQLite file, not the in-memory default: the point is to
@@ -165,6 +181,10 @@ jobs:
       # The ARC runner image has no C toolchain; see the action.
       - uses: ./.github/actions/system-deps
       - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: rui314/setup-mold@v1
+        with:
+          mold-version: 3.0.0
+          make-default: false
       - uses: Swatinem/rust-cache@v2
 
       # `route:list` compiles the router, which builds every middleware — so
