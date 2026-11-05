@@ -79,7 +79,7 @@ ARG ENV_FILE=.env.build
 COPY Cargo.lock ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    REV=$(sed -n 's|^source = "git+https://github.com/safewords/rainier-framework.git#\(.*\)"|\1|p' Cargo.lock | head -n1) \
+    REV=$(sed -n 's|^source = "git+https://github.com/safewords/rainier-framework.git[^#]*#\(.*\)"|\1|p' Cargo.lock | head -n1) \
  && cargo install cargo-rainier --locked \
       --git https://github.com/safewords/rainier-framework.git --rev "$REV"
 
