@@ -18,11 +18,19 @@
 # --- build -------------------------------------------------------------------
 
 # Pinned, so an image built today and one built in six months are the same
-# image. 1.99 matches the framework's workspace MSRV; raising the floor
+# image. 1.99.1 is the release the org's builds use; 1.99 matches the framework's workspace MSRV; raising the floor
 # below that fails cargo-rainier at install (`requires rustc 1.99 or
 # newer`), and this image installs it as part of the build so that is
 # a hard floor, not an advisory one.
-FROM rust:1.99-bookworm AS builder
+FROM rust:1.99.1-bookworm AS builder
+
+# Link with mold. Since Rust 1.90 linux-gnu links with the bundled rust-lld;
+# `linker-features=-lld` turns that off and `-fuse-ld=mold` has cc hand the
+# link to mold, which is faster again on a binary this size.
+RUN apt-get update && apt-get install -y --no-install-recommends mold \
+ && rm -rf /var/lib/apt/lists/*
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C linker-features=-lld -C link-arg=-fuse-ld=mold" \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C linker-features=-lld -C link-arg=-fuse-ld=mold"
 
 WORKDIR /build
 

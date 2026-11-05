@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
       # The ARC runner image has no C toolchain; see the action.
       - uses: ./.github/actions/system-deps
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@v4
       # The ARC runner image has no C toolchain; see the action.
       - uses: ./.github/actions/system-deps
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1
         with:
           # Asked for explicitly: this job runs clippy below, and a bare
           # runner's rustup install is minimal-profile — only the hosted
@@ -127,7 +127,7 @@ jobs:
       - uses: actions/checkout@v4
       # The ARC runner image has no C toolchain; see the action.
       - uses: ./.github/actions/system-deps
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1
       - uses: Swatinem/rust-cache@v2
 
       # Against a real SQLite file, not the in-memory default: the point is to
@@ -164,7 +164,7 @@ jobs:
       - uses: actions/checkout@v4
       # The ARC runner image has no C toolchain; see the action.
       - uses: ./.github/actions/system-deps
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1
       - uses: Swatinem/rust-cache@v2
 
       # `route:list` compiles the router, which builds every middleware — so
