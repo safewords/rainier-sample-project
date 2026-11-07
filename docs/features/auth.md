@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — works and is tested; tokens are stored in plain text and email matching is case-sensitive
 > **Owners (code):** `src/app/http/controllers/auth_controller.rs`, `src/app/providers/app_provider.rs` (`hashing`, `authentication`), `src/app/http/kernel.rs` (`auth`), `src/app/policies/post_policy.rs`, `src/app/models/user.rs`
 > **Related docs:** [add-ins.md](add-ins.md) (browser sessions, the `web` guard, OAuth tokens), [cache-and-sessions.md](cache-and-sessions.md); framework: [authentication], [authorization], [hashing], [encryption]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [authentication]: https://github.com/safewords/rainier-framework/blob/main/docs/authentication.md
 [authorization]: https://github.com/safewords/rainier-framework/blob/main/docs/authorization.md

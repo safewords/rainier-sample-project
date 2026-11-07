@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/config/cache.rs`, `src/config/session.rs`, `src/bootstrap.rs` (`cache`, `sessions`)
 > **Related docs:** [boot-and-configuration.md](boot-and-configuration.md), [compat-php.md](compat-php.md) (the session store wrapper); framework: [cache], [sessions]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [cache]: https://github.com/safewords/rainier-framework/blob/main/docs/cache.md
 [sessions]: https://github.com/safewords/rainier-framework/blob/main/docs/sessions.md
@@ -82,7 +82,7 @@ trusted, and an API route sets no session cookie (`tests/feature.rs:927-1030`).
 
 - `bootstrap.rs:396-413`: the reversal of the "a cache can be lost" fallback.
 - Tests: `bootstrap.rs:486-551`; the CI matrix builds the `redis`,
-  `redis-cluster` and `memcached` variants (`ci.yml:83-85`).
+  `redis-cluster` and `memcached` variants (`ci.yml:87-89`).
 
 ## Proposed / Ideas (backlog)
 

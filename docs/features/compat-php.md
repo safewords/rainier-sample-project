@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/bootstrap.rs:354-382`, `src/app/http/kernel.rs:132-199`, `src/config/services.rs` (`php_*`)
 > **Related docs:** [add-ins.md](add-ins.md), [cache-and-sessions.md](cache-and-sessions.md); framework: [compat], [scenarios]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [compat]: https://github.com/safewords/rainier-framework/blob/main/docs/compat.md
 [scenarios]: https://github.com/safewords/rainier-framework/blob/main/docs/scenarios.md

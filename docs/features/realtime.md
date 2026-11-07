@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — the WebSocket room accepts any bearer string without checking it, and Running-mode broadcasts only go to the log
 > **Owners (code):** `src/routes/ws.rs`, `src/routes/channels.rs`, `src/app/providers/app_provider.rs` (`broadcasting`), `src/app/models/post.rs` (`PostPublished`), `src/bootstrap.rs:48-50`, `:241-245`
 > **Related docs:** [queues-and-jobs.md](queues-and-jobs.md), [mail-and-notifications.md](mail-and-notifications.md); framework: [broadcasting], [websockets]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [broadcasting]: https://github.com/safewords/rainier-framework/blob/main/docs/broadcasting.md
 [websockets]: https://github.com/safewords/rainier-framework/blob/main/docs/websockets.md

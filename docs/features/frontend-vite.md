@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `resources/views/`, `resources/js/app.js`, `resources/css/app.css`, `vite.config.js`, `package.json`, `public/`, `src/bootstrap.rs:219-234`
 > **Related docs:** [docker-and-ci.md](docker-and-ci.md) (the `assets` stage); framework: [views], [vite]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [views]: https://github.com/safewords/rainier-framework/blob/main/docs/views.md
 [vite]: https://github.com/safewords/rainier-framework/blob/main/docs/vite.md
@@ -43,14 +43,14 @@ without its stylesheet instead of failing.
 
 ### Configuration
 
-None. Vite 6 (`package.json`). CI uses Node 20 (`ci.yml:127-131`) and the
+None. Vite 6 (`package.json`). CI uses Node 20 (`ci.yml:131-135`) and the
 image uses Node 22 (`Dockerfile:132`).
 
 ### Edge cases & gotchas
 
 - **CI has to build the assets before `cargo test`**, because
   `the_built_frontend_is_served_from_public` requests
-  `/build/manifest.json` (`ci.yml:120-131`).
+  `/build/manifest.json` (`ci.yml:124-135`).
 - **The README is stale.** It describes an `asset_controller` serving
   `/build/{path*}` (`README.md:303`). That controller was deleted when the
   framework started serving `public/` (`routes/web.rs:16-24`).

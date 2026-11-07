@@ -1,6 +1,6 @@
 # rainier-sample-project: feature docs
 
-> **Last verified against code:** 2026-11-06 @ `741ad28` (framework pinned at `ad4f199`, `Cargo.toml:13`)
+> **Last verified against code:** 2026-11-06 @ `fd84ed4` (framework pinned at `ad4f199`, `Cargo.toml:13`)
 
 The starter and reference application for the in-house [Rainier] framework: a
 small blog (users, posts, tags) with a JSON API, one server-rendered page, a
@@ -12,7 +12,7 @@ A bug here therefore tends to show up in every service started from it.
 
 It deploys nothing. `.github/workflows/ci.yml` runs fmt, clippy, a feature
 test matrix, a migrations round-trip, a boot check and a Docker build on every
-push to `main` and weekly (`ci.yml:3-10`). There is no deploy job.
+push to `main` that touches more than docs, and weekly (`ci.yml:3-14`). There is no deploy job.
 
 These docs cover what this application contains and how it uses the
 framework. The framework itself is documented in
@@ -119,7 +119,7 @@ with the same name (`Cargo.toml:41-140`). `cargo rainier features --env <file>`
 works out the list from a deployment's environment file (README "Sizing the
 binary").
 
-| Feature | Turns on | Wired in this app at | Covered by CI matrix (`ci.yml:81-90`) |
+| Feature | Turns on | Wired in this app at | Covered by CI matrix (`ci.yml:85-94`) |
 |---|---|---|---|
 | `redis` | Redis cache store client | `config/cache.rs:142-154` (`REDIS_URL`, `SESSION_REDIS_URL`) | yes |
 | `redis-cluster` | Redis Cluster (implies `redis`) | same stores | yes |
@@ -136,7 +136,7 @@ binary").
 
 ## Known defects
 
-Found while writing these docs at `741ad28`. None is fixed here, because this
+Found while writing these docs at `fd84ed4`. None is fixed here, because this
 commit is documentation only.
 
 | Component | Defect | Severity |
@@ -158,4 +158,4 @@ commit is documentation only.
 | frontend-vite | README describes an `asset_controller` serving `/build` (`README.md:303`). It was deleted, and the framework now serves `public/` (`routes/web.rs:12-24`). `resources/views/posts/show.view.html` is not rendered by any route | Low |
 | realtime | In Running mode broadcasts go to `Broadcasting::log()` (`app_provider.rs:217`). Nothing reaches a browser until somebody wires a real broadcaster | Low (documented in code) |
 | queues-and-jobs | The scheduled `sessions:prune` always queries the database session table (`routes/console.rs:44-55`), which is never migrated (`migrations/mod.rs:104-106`), so it fails every hour under `schedule:run` | Low |
-| docker-and-ci | The CI matrix never builds `sqs`, `kafka`, `s3`, `bcrypt`, `jwt`, `http-client` or any `mail-*` feature (`ci.yml:81-90`) | Low |
+| docker-and-ci | The CI matrix never builds `sqs`, `kafka`, `s3`, `bcrypt`, `jwt`, `http-client` or any `mail-*` feature (`ci.yml:85-94`) | Low |

@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/routes/console.rs`, `src/app/console/commands/`, `src/main.rs`, `src/database/seeders.rs`
 > **Related docs:** [queues-and-jobs.md](queues-and-jobs.md) (the schedule), [models-and-migrations.md](models-and-migrations.md), [add-ins.md](add-ins.md) (`oauth:client`); framework: [console], [scheduling]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [console]: https://github.com/safewords/rainier-framework/blob/main/docs/console.md
 [scheduling]: https://github.com/safewords/rainier-framework/blob/main/docs/scheduling.md
@@ -57,7 +57,7 @@ PKCE. A confidential client also gets client credentials
 
 ## History & references
 
-- Tests: `routes/console.rs:101-182` (registration, schedule expressions, guards), `tests/feature.rs:903` (seeding is idempotent); CI `migrations` job (`ci.yml:135-174`).
+- Tests: `routes/console.rs:101-182` (registration, schedule expressions, guards), `tests/feature.rs:903` (seeding is idempotent); CI `migrations` job (`ci.yml:139-178`).
 
 ## Proposed / Ideas (backlog)
 

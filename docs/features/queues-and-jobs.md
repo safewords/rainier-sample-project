@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/config/queue.rs`, `src/bootstrap.rs` (`JobRegistry`), `src/app/jobs/`, `src/app/providers/app_provider.rs` (`EventServiceProvider`), `src/routes/console.rs` (`schedule`), `src/config/kafka.rs`
 > **Related docs:** [mail-and-notifications.md](mail-and-notifications.md), [realtime.md](realtime.md), [console-commands.md](console-commands.md); framework: [events], [queues], [scheduling], [kafka]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [events]: https://github.com/safewords/rainier-framework/blob/main/docs/events.md
 [queues]: https://github.com/safewords/rainier-framework/blob/main/docs/queues.md

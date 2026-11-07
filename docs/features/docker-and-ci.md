@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — the image builds and serves; its healthcheck probes the wrong thing, and the CI matrix leaves most driver features unbuilt
 > **Owners (code):** `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`, `.github/actions/system-deps/action.yml`, `.githooks/pre-commit`
 > **Related docs:** [boot-and-configuration.md](boot-and-configuration.md) (feature sizing); framework: [deployment]
-> **Last verified against code:** 2026-11-06 @ `741ad28` (CI run on `741ad28`: success)
+> **Last verified against code:** 2026-11-06 @ `fd84ed4` (CI run on `741ad28`: success)
 
 [deployment]: https://github.com/safewords/rainier-framework/blob/main/docs/deployment.md
 
@@ -11,9 +11,10 @@
 
 The image has three stages: a Rust builder sized by `.env.build`, a Node
 stage that compiles the Vite bundle, and a slim Debian runtime that runs as
-an unprivileged user. CI runs on every push to `main` and every Monday at
-07:00, the weekly run catching changes in the framework's `main` that would
-otherwise produce no commit here (`ci.yml:3-10`). Nothing is deployed and no
+an unprivileged user. CI runs on every push to `main`, except pushes that only
+touch `docs/**` or `*.md` (`paths-ignore`, `ci.yml:5-9`). It also runs every
+Monday at 07:00, which catches changes in the framework's `main` that would
+otherwise produce no commit here (`ci.yml:3-14`). Nothing is deployed and no
 image is pushed.
 
 ```mermaid
@@ -44,13 +45,13 @@ first two would stop the boot (`Dockerfile:36-72`).
 
 | Job | What it proves | Source |
 |---|---|---|
-| `check` | `cargo fmt --all` (**commits the formatting itself on `main`**, fails anywhere else); `cargo clippy --all-targets -D warnings` | `ci.yml:30-73` |
-| `test (matrix)` | per entry: clippy, `npm ci && npm run build`, `cargo test <flags>` | `ci.yml:75-133` |
-| `migrations` | on a SQLite file: `migrate`, then `migrate:rollback` must refuse (`0005` is irreversible), then `migrate` again reports "Nothing to migrate" | `ci.yml:135-174` |
-| `routes` | `cargo run -- route:list` boots | `ci.yml:176-195` |
-| `docker` | builds with `.env.build = CACHE_DRIVER=memory, MAIL_DRIVER=log`, runs it with a random `APP_KEY`, and polls `/health` for up to 30 s | `ci.yml:197-248` |
+| `check` | `cargo fmt --all` (**commits the formatting itself on `main`**, fails anywhere else); `cargo clippy --all-targets -D warnings` | `ci.yml:34-77` |
+| `test (matrix)` | per entry: clippy, `npm ci && npm run build`, `cargo test <flags>` | `ci.yml:79-137` |
+| `migrations` | on a SQLite file: `migrate`, then `migrate:rollback` must refuse (`0005` is irreversible), then `migrate` again reports "Nothing to migrate" | `ci.yml:139-178` |
+| `routes` | `cargo run -- route:list` boots | `ci.yml:180-199` |
+| `docker` | builds with `.env.build = CACHE_DRIVER=memory, MAIL_DRIVER=log`, runs it with a random `APP_KEY`, and polls `/health` for up to 30 s | `ci.yml:201-252` |
 
-Matrix entries (`ci.yml:81-90`): `default`, `redis`, `redis-cluster`,
+Matrix entries (`ci.yml:85-94`): `default`, `redis`, `redis-cluster`,
 `memcached`, `add-ins`, `compat-php`.
 
 `system-deps` installs `build-essential cmake pkg-config zstd` on the bare ARC
@@ -83,7 +84,7 @@ passed at run time and never go into `.env.build`.
 
 ## History & references
 
-- `ci.yml:108-119`: why the cache matrix survived the removal of the per-driver arms.
+- `ci.yml:112-123`: why the cache matrix survived the removal of the per-driver arms.
 - `README.md`: "Sizing the binary".
 
 ## Proposed / Ideas (backlog)

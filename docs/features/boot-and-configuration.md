@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/main.rs`, `src/bootstrap.rs`, `src/config/`, `src/app/providers/app_provider.rs`, `src/app/providers/repository_provider.rs`
 > **Related docs:** [routes-and-controllers.md](routes-and-controllers.md), [cache-and-sessions.md](cache-and-sessions.md), [docker-and-ci.md](docker-and-ci.md); framework: [lifecycle], [configuration], [providers], [container]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [lifecycle]: https://github.com/safewords/rainier-framework/blob/main/docs/lifecycle.md
 [configuration]: https://github.com/safewords/rainier-framework/blob/main/docs/configuration.md

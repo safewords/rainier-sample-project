@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — the schema works; the search index and `excerpt` column are created and never used
 > **Owners (code):** `src/app/models/`, `src/app/repositories/`, `src/database/migrations/`, `src/database/seeders.rs`
 > **Related docs:** [add-ins.md](add-ins.md) (the add-in tables), [console-commands.md](console-commands.md) (`migrate`, `app:seed`); framework: [models], [relationships], [repositories], [migrations], [database], [pagination]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [models]: https://github.com/safewords/rainier-framework/blob/main/docs/models.md
 [relationships]: https://github.com/safewords/rainier-framework/blob/main/docs/relationships.md

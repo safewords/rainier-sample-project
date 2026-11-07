@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — the disks are declared and built; no application code reads or writes them
 > **Owners (code):** `src/config/storage.rs`
 > **Related docs:** [boot-and-configuration.md](boot-and-configuration.md), [docker-and-ci.md](docker-and-ci.md) (`STORAGE_DRIVER` in `.env.build`); framework: [filesystem]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [filesystem]: https://github.com/safewords/rainier-framework/blob/main/docs/filesystem.md
 

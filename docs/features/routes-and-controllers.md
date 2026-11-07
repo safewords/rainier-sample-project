@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/routes/web.rs`, `src/routes/api.rs`, `src/routes/openapi.rs`, `src/app/http/kernel.rs`, `src/app/http/middleware/`, `src/app/http/controllers/`, `src/app/http/requests/`
 > **Related docs:** [auth.md](auth.md), [add-ins.md](add-ins.md) (the `/account`, `/billing`, `/oauth` routes), [realtime.md](realtime.md) (`/ws`, `/api/broadcasting/auth`); framework: [routing], [middleware], [controllers], [requests], [validation], [responses]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [routing]: https://github.com/safewords/rainier-framework/blob/main/docs/routing.md
 [middleware]: https://github.com/safewords/rainier-framework/blob/main/docs/middleware.md

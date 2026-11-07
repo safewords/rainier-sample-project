@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/app/providers/addin_provider.rs`, `src/routes/addins.rs`, `src/config/services.rs`, `src/app/providers/outbound.rs`, `src/app/http/controllers/{account,billing,sso,oauth}_controller.rs`, `src/app/http/middleware/subscribed.rs`, `src/app/models/{member,account_state,oauth}.rs`, `src/app/repositories/{account_store,oauth_store,subscription_repository}.rs`, `tests/addins.rs`
 > **Related docs:** [compat-php.md](compat-php.md), [auth.md](auth.md), [models-and-migrations.md](models-and-migrations.md); framework: [add-ins], [accounts], [two-factor], [sso], [billing], [oauth-server], [captcha], [observability]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [add-ins]: https://github.com/safewords/rainier-framework/blob/main/docs/add-ins.md
 [accounts]: https://github.com/safewords/rainier-framework/blob/main/docs/accounts.md

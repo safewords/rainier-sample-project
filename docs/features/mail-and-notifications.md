@@ -3,7 +3,7 @@
 > **Status:** STABLE
 > **Owners (code):** `src/config/mail.rs`, `src/app/mail/`, `src/app/notifications/`, `src/app/http/controllers/notification_controller.rs`, `src/app/providers/app_provider.rs` (`mail`, `notifications`), `resources/views/mail/`
 > **Related docs:** [queues-and-jobs.md](queues-and-jobs.md), [realtime.md](realtime.md), [add-ins.md](add-ins.md) (reset and verification mail, Discord); framework: [mail], [notifications]
-> **Last verified against code:** 2026-11-06 @ `741ad28`
+> **Last verified against code:** 2026-11-06 @ `fd84ed4`
 
 [mail]: https://github.com/safewords/rainier-framework/blob/main/docs/mail.md
 [notifications]: https://github.com/safewords/rainier-framework/blob/main/docs/notifications.md
