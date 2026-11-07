@@ -2,6 +2,10 @@ name: CI
 
 on:
   push:
+    # A change that is only documentation runs no pipeline (2026-11-06).
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
     branches: [main]
   # The framework is a git dependency with no version to pin against, so `main`
   # moving is a change to this application's build with no commit here to
