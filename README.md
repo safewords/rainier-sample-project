@@ -20,6 +20,8 @@ Per-component documentation (what each part does, verified against the code
 with `path:line` references, and the known-defects list) lives in
 [`docs/features/`](docs/features/README.md).
 
+What changed, newest first: [`CHANGELOG.md`](CHANGELOG.md).
+
 ## What's here
 
 Everything is wired and working: models, repositories, a router with groups and
