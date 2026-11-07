@@ -16,6 +16,10 @@ It runs against SQLite in memory out of the box, so there is nothing to install
 and nothing to configure. Point `DATABASE_URL` at a file, MySQL or Postgres when
 you want the data to survive — nothing else in the app changes.
 
+Per-component documentation (what each part does, verified against the code
+with `path:line` references, and the known-defects list) lives in
+[`docs/features/`](docs/features/README.md).
+
 ## What's here
 
 Everything is wired and working: models, repositories, a router with groups and
