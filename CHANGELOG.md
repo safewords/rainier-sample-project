@@ -10,6 +10,9 @@ its trunk is `main`. History before this file is in `git log`.
 
 ### Added
 
+- An unused dependency fails the build: `[lints.cargo] unused_dependencies = "deny"`
+  in `Cargo.toml`. Cargo 1.100 only warns by default, and clippy's
+  `-D warnings` does not see it.
 - Every framework add-in, each behind its own Cargo feature of the same name
   (`accounts`, `two-factor`, `passkeys`, `sso`, `billing-stripe`,
   `oauth-server`, `telemetry`, `captcha`, `notify-discord`, `compat-php`);

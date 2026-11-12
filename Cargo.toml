@@ -143,6 +143,15 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 # One `app` library plus one `app` binary: the binary is the console entry
 # point, and the library is what the tests boot.
+# Cargo's own lints (Cargo 1.100). `unused_dependencies` is warn-by-default,
+# and a warning from cargo is not a rustc warning: `cargo clippy -- -D warnings`
+# exits 0 with an unused dependency in the manifest. `deny` makes any cargo
+# command that compiles the crate fail on one, so the image build and the
+# tests both catch it. A dependency used only behind a feature or a target
+# belongs under that feature or target, which is what the lint then asks for.
+[lints.cargo]
+unused_dependencies = "deny"
+
 [lib]
 name = "app"
 path = "src/lib.rs"
