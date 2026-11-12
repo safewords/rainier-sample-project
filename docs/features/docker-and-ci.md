@@ -3,7 +3,7 @@
 > **Status:** PARTIAL — the image builds and serves; its healthcheck probes the wrong thing, and the CI matrix leaves most driver features unbuilt
 > **Owners (code):** `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`, `.github/actions/system-deps/action.yml`, `.githooks/pre-commit`
 > **Related docs:** [boot-and-configuration.md](boot-and-configuration.md) (feature sizing); framework: [deployment]
-> **Last verified against code:** 2026-11-06 @ `fd84ed4` (CI run on `741ad28`: success)
+> **Last verified against code:** 2026-11-12 @ `a980d73` (every CI job run locally on Rust 1.100.0, the image for linux/amd64; CI itself has not run on it)
 
 [deployment]: https://github.com/safewords/rainier-framework/blob/main/docs/deployment.md
 
