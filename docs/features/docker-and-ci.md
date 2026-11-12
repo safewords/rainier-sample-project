@@ -32,7 +32,7 @@ flowchart LR
 
 | Stage | Details | Source |
 |---|---|---|
-| builder | `rust:1.99.1-bookworm`, mold linker; installs `cargo-rainier` at the framework rev read from `Cargo.lock`; `ARG ENV_FILE=.env.build` (required, so a missing file fails the build); `ARG ADDINS` appends `RAINIER_ADDINS`; stripped binary | `Dockerfile:25-125` |
+| builder | `rust:1.100.0-bookworm`, mold linker; installs `cargo-rainier` at the framework rev read from `Cargo.lock`; `ARG ENV_FILE=.env.build` (required, so a missing file fails the build); `ARG ADDINS` appends `RAINIER_ADDINS`; stripped binary | `Dockerfile:25-125` |
 | assets | `node:22-bookworm-slim`, `npm ci`, `npm run build` | `Dockerfile:132-140` |
 | runtime | `ca-certificates` only; copies `app`, `resources/`, `public/build`; creates `storage/{logs,mail,app}` and `/data`; `SERVER_HOST=0.0.0.0`, `SERVER_PORT=8000`, `APP_ENV=production`; `EXPOSE 8000` | `Dockerfile:148-192` |
 | healthcheck | `app route:list` every 30 s | `Dockerfile:188-189` |
@@ -81,6 +81,14 @@ passed at run time and never go into `.env.build`.
 - **`check` pushes to `main` itself** (`style: cargo fmt [skip ci]`), so
   after a push it is worth pulling before the next commit.
 - **Node 20 in CI and Node 22 in the image.**
+- **The image does not build on an arm64 host** (Apple Silicon, Graviton)
+  without `--platform linux/amd64`. The builder sets
+  `-C linker-features=-lld` for `aarch64-unknown-linux-gnu` too
+  (`Dockerfile:32-33`), and rustc rejects that flag as unstable on that
+  target, so the first cargo command (`:80-84`) fails. Run on 2026-11-12
+  against both `rust:1.99.1-bookworm` and `rust:1.100.0-bookworm`: the same
+  error on each, so it predates the 1.100 move. CI builds on amd64 and does
+  not see it.
 
 ## History & references
 

@@ -164,7 +164,7 @@ pub fn php_keys(
     services: &crate::config::services::Services,
 ) -> Option<rainier_framework::crypt::KeyRing> {
     let key = services.php_app_key.as_deref()?;
-    rainier_framework::crypt::KeyRing::from_base64(key.trim_start_matches("base64:"), &[])
+    rainier_framework::crypt::KeyRing::from_base64(key.trim_prefix("base64:"), &[])
         .map_err(|e| tracing::error!(error = %e.message(), "PHP_APP_KEY is not a base64 key"))
         .ok()
 }

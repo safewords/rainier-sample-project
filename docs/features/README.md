@@ -158,4 +158,5 @@ commit is documentation only.
 | frontend-vite | README describes an `asset_controller` serving `/build` (`README.md:303`). It was deleted, and the framework now serves `public/` (`routes/web.rs:12-24`). `resources/views/posts/show.view.html` is not rendered by any route | Low |
 | realtime | In Running mode broadcasts go to `Broadcasting::log()` (`app_provider.rs:217`). Nothing reaches a browser until somebody wires a real broadcaster | Low (documented in code) |
 | queues-and-jobs | The scheduled `sessions:prune` always queries the database session table (`routes/console.rs:44-55`), which is never migrated (`migrations/mod.rs:104-106`), so it fails every hour under `schedule:run` | Low |
+| docker-and-ci | `docker build` fails on an arm64 host: `-C linker-features=-lld` is set for `aarch64-unknown-linux-gnu` (`Dockerfile:32-33`) and rustc rejects it there as unstable. `--platform linux/amd64` works. CI is amd64 and does not see it. Found 2026-11-12, on 1.99.1 and 1.100.0 alike | Low |
 | docker-and-ci | The CI matrix never builds `sqs`, `kafka`, `s3`, `bcrypt`, `jwt`, `http-client` or any `mail-*` feature (`ci.yml:85-94`) | Low |

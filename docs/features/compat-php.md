@@ -58,7 +58,7 @@ sequenceDiagram
 The feature test builds a PHP-serialised payload with the guard key
 `login_web_<sha1>` and the user id, puts it in the cache, seals the id into
 the PHP cookie, and checks that `/account` returns the member
-(`tests/addins.rs:710-760`).
+(`tests/addins.rs:710-759`).
 
 ### Edge cases & gotchas
 

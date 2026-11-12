@@ -18,11 +18,11 @@
 # --- build -------------------------------------------------------------------
 
 # Pinned, so an image built today and one built in six months are the same
-# image. 1.99.1 is the release the org's builds use; 1.99 matches the framework's workspace MSRV; raising the floor
-# below that fails cargo-rainier at install (`requires rustc 1.99 or
-# newer`), and this image installs it as part of the build so that is
-# a hard floor, not an advisory one.
-FROM rust:1.99.1-bookworm AS builder
+# image. 1.100.0 is the release the org's builds use, and `rust-version` in
+# Cargo.toml says the same. A toolchain older than that cannot build this
+# application, and one below the framework's own MSRV fails earlier still, at
+# the `cargo install cargo-rainier` below: a hard floor, not an advisory one.
+FROM rust:1.100.0-bookworm AS builder
 
 # Link with mold. Since Rust 1.90 linux-gnu links with the bundled rust-lld;
 # `linker-features=-lld` turns that off and `-fuse-ld=mold` has cc hand the

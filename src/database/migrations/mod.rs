@@ -167,7 +167,7 @@ mod tests {
         ];
 
         for (module, name) in modules.iter().zip(all().names()) {
-            assert_eq!(module.trim_start_matches('m'), name, "`{module}.rs` declares `{name}`");
+            assert_eq!(module.trim_prefix('m'), name, "`{module}.rs` declares `{name}`");
         }
     }
 

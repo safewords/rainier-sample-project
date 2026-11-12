@@ -151,7 +151,7 @@ mod accounts {
         let text = sent.last().and_then(|message| message.text.clone()).expect("an email");
         let start = text.find("https://app.test").expect("a link to the application");
         let link = text[start..].split_whitespace().next().unwrap();
-        link.trim_start_matches("https://app.test").to_string()
+        link.trim_prefix("https://app.test").to_string()
     }
 
     #[tokio::test]
@@ -750,8 +750,7 @@ mod compat {
             .unwrap();
 
         // …and its id, sealed into its cookie.
-        let keys =
-            KeyRing::from_base64(TEST_PHP_APP_KEY.trim_start_matches("base64:"), &[]).unwrap();
+        let keys = KeyRing::from_base64(TEST_PHP_APP_KEY.trim_prefix("base64:"), &[]).unwrap();
         let cookie = EncryptedCookies::new(keys).encrypt("php_session", php_id).unwrap();
         browser_two.cookies.lock().unwrap().push(("php_session".into(), cookie));
 

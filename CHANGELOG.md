@@ -20,6 +20,10 @@ its trunk is `main`. History before this file is in `git log`.
 ### Changed
 
 - Builds on Rust 1.99.1 and links with mold.
+- Builds on Rust 1.100.0. `rust-version`, the Dockerfile's builder image
+  (`rust:1.100.0-bookworm`) and every CI job's toolchain move together, and
+  1.100 is now the minimum: the code uses `str::trim_prefix`, so an older
+  toolchain no longer compiles it.
 
 ### Fixed
 
