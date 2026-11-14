@@ -22,6 +22,9 @@ its trunk is `main`. History before this file is in `git log`.
 
 ### Changed
 
+- The image is Alpine: `rust:1.100.0-alpine3.24` builds a static musl binary,
+  `node:22-alpine3.24` builds the assets, and `alpine:3.24` runs it. `mimalloc`
+  is the global allocator on musl, since musl's own serialises threads.
 - Builds on Rust 1.99.1 and links with mold.
 - Builds on Rust 1.100.0. `rust-version`, the Dockerfile's builder image
   (`rust:1.100.0-bookworm`) and every CI job's toolchain move together, and

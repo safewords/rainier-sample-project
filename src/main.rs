@@ -12,6 +12,14 @@
 use app::{boot, Mode};
 use rainier_framework::prelude::*;
 
+// The images build for musl (rainier-toolchain's Alpine toolchain), and
+// musl's malloc serialises every worker thread on one lock, where glibc's
+// did not. mimalloc gives a multi-threaded server back that throughput.
+// Every other target keeps the system allocator.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Not `boot(..).await?`. Returning the error from `main` prints it with

@@ -10,8 +10,9 @@
 ## Overview
 
 The image has three stages: a Rust builder sized by `.env.build`, a Node
-stage that compiles the Vite bundle, and a slim Debian runtime that runs as
-an unprivileged user. CI runs on every push to `main`, except pushes that only
+stage that compiles the Vite bundle, and an Alpine runtime that runs as
+an unprivileged user. The builder is Rust's musl toolchain, so the binary is
+static and the runtime has no libc to match. CI runs on every push to `main`, except pushes that only
 touch `docs/**` or `*.md` (`paths-ignore`, `ci.yml:5-9`). It also runs every
 Monday at 07:00, which catches changes in the framework's `main` that would
 otherwise produce no commit here (`ci.yml:3-14`). Nothing is deployed and no
@@ -19,11 +20,11 @@ image is pushed.
 
 ```mermaid
 flowchart LR
-  envb[".env.build<br/>driver selections, no secrets"] --> sizer["cargo rainier features --list<br/>(Dockerfile:108-111)"]
-  lock[Cargo.lock rev] --> inst["cargo install cargo-rainier --rev REV<br/>(:79-84)"] --> sizer
-  sizer --> build["cargo build --release --locked<br/>--no-default-features --features …<br/>(:118-125)"]
-  npm["npm ci && npm run build<br/>(:132-140)"] --> rt
-  build --> rt["debian:bookworm-slim<br/>user rainier (10001)<br/>ENTRYPOINT app, CMD serve<br/>(:148-192)"]
+  envb[".env.build<br/>driver selections, no secrets"] --> sizer["cargo rainier features --list<br/>(Dockerfile:111-114)"]
+  lock[Cargo.lock rev] --> inst["cargo install cargo-rainier --rev REV<br/>(:82-87)"] --> sizer
+  sizer --> build["cargo build --release --locked<br/>--no-default-features --features …<br/>(:121-128)"]
+  npm["npm ci && npm run build<br/>(:135-143)"] --> rt
+  build --> rt["alpine:3.24<br/>user rainier (10001)<br/>ENTRYPOINT app, CMD serve<br/>(:151-194)"]
 ```
 
 ## How it works today
@@ -32,14 +33,14 @@ flowchart LR
 
 | Stage | Details | Source |
 |---|---|---|
-| builder | `rust:1.100.0-bookworm`, mold linker; installs `cargo-rainier` at the framework rev read from `Cargo.lock`; `ARG ENV_FILE=.env.build` (required, so a missing file fails the build); `ARG ADDINS` appends `RAINIER_ADDINS`; stripped binary | `Dockerfile:25-125` |
-| assets | `node:22-bookworm-slim`, `npm ci`, `npm run build` | `Dockerfile:132-140` |
-| runtime | `ca-certificates` only; copies `app`, `resources/`, `public/build`; creates `storage/{logs,mail,app}` and `/data`; `SERVER_HOST=0.0.0.0`, `SERVER_PORT=8000`, `APP_ENV=production`; `EXPOSE 8000` | `Dockerfile:148-192` |
-| healthcheck | `app route:list` every 30 s | `Dockerfile:188-189` |
+| builder | `rust:1.100.0-alpine3.24` (musl), mold linker; `mimalloc` is the global allocator on musl (`src/main.rs`), since musl's own serialises threads; installs `cargo-rainier` at the framework rev read from `Cargo.lock`; `ARG ENV_FILE=.env.build` (required, so a missing file fails the build); `ARG ADDINS` appends `RAINIER_ADDINS`; stripped static binary | `Dockerfile:25-128` |
+| assets | `node:22-alpine3.24`, `npm ci`, `npm run build` | `Dockerfile:135-143` |
+| runtime | `alpine:3.24`, `ca-certificates` only; copies `app`, `resources/`, `public/build`; creates `storage/{logs,mail,app}` and `/data`; `SERVER_HOST=0.0.0.0`, `SERVER_PORT=8000`, `APP_ENV=production`; `EXPOSE 8000` | `Dockerfile:151-194` |
+| healthcheck | `app route:list` every 30 s | `Dockerfile:190-191` |
 
 `.env.build` is the only file where `CACHE_DRIVER`, `QUEUE_DRIVER` and
 `STORAGE_DRIVER` should appear. It never reaches the runtime stage, where the
-first two would stop the boot (`Dockerfile:36-72`).
+first two would stop the boot (`Dockerfile:39-75`).
 
 ### CI jobs
 
@@ -69,7 +70,7 @@ passed at run time and never go into `.env.build`.
 
 - **The healthcheck runs `route:list`, not `/health`.** The comment just
   above it says the probe should be `/health`, a plain 200 with no database
-  behind it (`Dockerfile:183-189`). `route:list` boots the whole
+  behind it (`Dockerfile:185-191`). `route:list` boots the whole
   application every 30 s: it connects to the database, builds every cache
   store and runs pending migrations (`app_provider.rs:65-87`). It never
   checks that `serve` is answering, so a wedged server stays "healthy" and a
@@ -81,14 +82,14 @@ passed at run time and never go into `.env.build`.
 - **`check` pushes to `main` itself** (`style: cargo fmt [skip ci]`), so
   after a push it is worth pulling before the next commit.
 - **Node 20 in CI and Node 22 in the image.**
-- **The image does not build on an arm64 host** (Apple Silicon, Graviton)
-  without `--platform linux/amd64`. The builder sets
-  `-C linker-features=-lld` for `aarch64-unknown-linux-gnu` too
-  (`Dockerfile:32-33`), and rustc rejects that flag as unstable on that
-  target, so the first cargo command (`:80-84`) fails. Run on 2026-11-12
-  against both `rust:1.99.1-bookworm` and `rust:1.100.0-bookworm`: the same
-  error on each, so it predates the 1.100 move. CI builds on amd64 and does
-  not see it.
+- **arm64 hosts (Apple Silicon, Graviton): untested since the move to
+  Alpine.** The old builder set `-C linker-features=-lld` for
+  `aarch64-unknown-linux-gnu`, which rustc rejects as unstable on that
+  target, so the image failed at its first cargo command on arm64 (run on
+  2026-11-12 against `rust:1.99.1-bookworm` and `rust:1.100.0-bookworm`).
+  The builder is now the musl target and passes only `-fuse-ld=mold`
+  (`Dockerfile:35-36`), so that cause is gone, but nobody has built it on
+  arm64 since. CI builds on amd64.
 
 ## History & references
 

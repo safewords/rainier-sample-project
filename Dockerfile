@@ -22,15 +22,18 @@
 # Cargo.toml says the same. A toolchain older than that cannot build this
 # application, and one below the framework's own MSRV fails earlier still, at
 # the `cargo install cargo-rainier` below: a hard floor, not an advisory one.
-FROM rust:1.100.0-bookworm AS builder
+FROM rust:1.100.0-alpine3.24 AS builder
 
-# Link with mold. Since Rust 1.90 linux-gnu links with the bundled rust-lld;
-# `linker-features=-lld` turns that off and `-fuse-ld=mold` has cc hand the
-# link to mold, which is faster again on a binary this size.
-RUN apt-get update && apt-get install -y --no-install-recommends mold \
- && rm -rf /var/lib/apt/lists/*
-ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C linker-features=-lld -C link-arg=-fuse-ld=mold" \
-    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C linker-features=-lld -C link-arg=-fuse-ld=mold"
+# Alpine, so the build is Rust's musl toolchain and the binary is a static
+# executable: nothing in the runtime stage below has to match a libc.
+#
+# build-base and linux-headers for the C the dependencies compile (ring,
+# aws-lc, sqlite, mimalloc); perl and cmake for aws-lc's build. Link with
+# mold — faster than the default linker on a binary this size. The musl
+# targets do not default to rust-lld, so `-fuse-ld=mold` is all it takes.
+RUN apk add --no-cache build-base linux-headers perl cmake mold
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C link-arg=-fuse-ld=mold" \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 
 WORKDIR /build
 
@@ -129,7 +132,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # The Vite build, in its own stage so the Rust cache and the npm cache never
 # invalidate each other. What comes out is `public/build` — content-hashed
 # files plus the manifest the `@vite` directive resolves entries against.
-FROM node:22-bookworm-slim AS assets
+FROM node:22-alpine3.24 AS assets
 
 WORKDIR /build
 
@@ -141,19 +144,18 @@ RUN npm run build
 
 # --- runtime -----------------------------------------------------------------
 
-# Debian slim rather than distroless or Alpine. Slim keeps the glibc the build
-# linked against and the CA bundle an outbound HTTPS call needs; Alpine would
-# mean musl and a second build; distroless would mean no shell, which is a real
-# cost the first time something is wrong in production.
-FROM debian:bookworm-slim AS runtime
+# Alpine rather than distroless. The binary is static musl, so the runtime
+# needs only the CA bundle an outbound HTTPS call verifies against; Alpine
+# adds a shell on top, which is worth its few megabytes the first time
+# something is wrong in production. Distroless would mean no shell.
+FROM alpine:3.24 AS runtime
 
-RUN apt-get update \
- && apt-get install --no-install-recommends -y ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates
 
 # Not root. A container escape is one bug away from being a host compromise,
 # and nothing here needs a privileged port.
-RUN useradd --system --create-home --uid 10001 rainier
+RUN addgroup -S -g 10001 rainier \
+ && adduser -S -D -u 10001 -G rainier -h /home/rainier rainier
 
 WORKDIR /app
 

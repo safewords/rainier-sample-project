@@ -446,7 +446,7 @@ docker run --rm -p 8000:8000 \
   rainier-sample
 ```
 
-Two stages: a builder with the toolchain, and a Debian slim runtime holding the
+Two stages: a builder with the toolchain, and an Alpine runtime holding the
 binary, the templates and nothing else. It runs as a non-root user and
 `HEALTHCHECK` curls `/health`.
 
