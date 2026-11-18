@@ -30,6 +30,11 @@ its trunk is `main`. History before this file is in `git log`.
   (`rust:1.100.0-bookworm`) and every CI job's toolchain move together, and
   1.100 is now the minimum: the code uses `str::trim_prefix`, so an older
   toolchain no longer compiles it.
+- On the latest framework, whose JWTs (jsonwebtoken 12) and RSA keys (rsa 0.10)
+  hash with the same sha2 as the rest of it, and on the newest release of every
+  dependency in the lockfile. The debug profile now optimises `crypto-bigint`
+  and `crypto-primes`, rsa 0.10's arithmetic, so booting with `oauth-server`
+  and no `OAUTH_PRIVATE_KEY` stays fast.
 
 ### Fixed
 
