@@ -137,6 +137,7 @@ mod tests {
                 "rainier_notify_0001_notifications",
                 "rainier_queue_0001_jobs",
                 "rainier_queue_0002_failed_jobs",
+                "rainier_queue_0003_jobs_traceparent",
             ]
         );
     }
