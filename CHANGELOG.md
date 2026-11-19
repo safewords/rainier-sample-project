@@ -22,6 +22,10 @@ its trunk is `main`. History before this file is in `git log`.
 
 ### Changed
 
+- The front end builds with Vite 8 (Rolldown); `vite.config.js` uses
+  `build.rolldownOptions`, Vite 8's name for `build.rollupOptions`. CI builds
+  the assets on Node 22, the same as the image. The manifest and the `@vite`
+  entries are unchanged.
 - The image is Alpine: `rust:1.100.0-alpine3.24` builds a static musl binary,
   `node:22-alpine3.24` builds the assets, and `alpine:3.24` runs it. `mimalloc`
   is the global allocator on musl, since musl's own serialises threads.

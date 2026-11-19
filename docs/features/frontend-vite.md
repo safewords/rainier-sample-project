@@ -43,8 +43,8 @@ without its stylesheet instead of failing.
 
 ### Configuration
 
-None. Vite 6 (`package.json`). CI uses Node 20 (`ci.yml:131-135`) and the
-image uses Node 22 (`Dockerfile:132`).
+None. Vite 8 (`package.json`), which needs Node 20.19 or 22.12 and later.
+CI uses Node 22 (`ci.yml:131-135`) and so does the image (`Dockerfile:135`).
 
 ### Edge cases & gotchas
 

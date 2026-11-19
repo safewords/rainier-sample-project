@@ -81,7 +81,8 @@ passed at run time and never go into `.env.build`.
   compiled in CI, so a bad forward would not show up.
 - **`check` pushes to `main` itself** (`style: cargo fmt [skip ci]`), so
   after a push it is worth pulling before the next commit.
-- **Node 20 in CI and Node 22 in the image.**
+- **Node 22 in CI and in the image.** Vite 8 needs Node 20.19 or 22.12 and
+  later; CI was on Node 20, which is past end of life, until 2026-11-18.
 - **arm64 hosts (Apple Silicon, Graviton): untested since the move to
   Alpine.** The old builder set `-C linker-features=-lld` for
   `aarch64-unknown-linux-gnu`, which rustc rejects as unstable on that

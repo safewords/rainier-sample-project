@@ -61,7 +61,7 @@ export default defineConfig({
     // `true` would put it under `.vite/`; the resolver reads both, but the
     // named form is the one you can find).
     manifest: "manifest.json",
-    rollupOptions: {
+    rolldownOptions: {
       // The closed set of `@vite` entries. An entry a template names that is
       // not listed here is a render-time error naming this file.
       input: ["resources/css/app.css", "resources/js/app.js"],
