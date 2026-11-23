@@ -1,7 +1,7 @@
 name: system dependencies
 description: >
-  The ARC runner image is a bare Ubuntu: no C toolchain, no cmake, no
-  pkg-config. Everything a `cargo build` of this application links against is
+  The upstream ARC runner image is a bare Ubuntu: no C toolchain, no cmake,
+  no pkg-config (safewords' own runner image has them, and this no-ops). Everything a `cargo build` of this application links against is
   installed here, once, so every compiling job starts with this step instead
   of growing its own apt lines. The docker job deliberately does not use it —
   its toolchain lives inside the image build.
