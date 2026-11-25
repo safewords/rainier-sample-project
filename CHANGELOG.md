@@ -8,6 +8,12 @@ its trunk is `main`. History before this file is in `git log`.
 
 ## [Unreleased]
 
+### Changed
+
+- Rainier is at `8652142`, the latest `main`. The layout is otherwise
+  unchanged: the framework's new MCP, event-bus, public-file streaming and
+  database-guard work is additive.
+
 ### Added
 
 - An unused dependency fails the build: `[lints.cargo] unused_dependencies = "deny"`
